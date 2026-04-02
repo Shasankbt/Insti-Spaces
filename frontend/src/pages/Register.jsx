@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { registerUser } from '../Api'
+import { registerUser, loginUser } from '../Api'
 
 export default function Register() {
   const [form, setForm] = useState({ username: '', email: '', password: '' })
@@ -16,9 +16,11 @@ export default function Register() {
     try {
       await registerUser(form)
       const res = await loginUser({ email: form.email, password: form.password })
+      console.log(res)
       login(res.data.user, res.data.token)
       navigate('/')
     } catch (err) {
+        console.log("res: ", err.response)
       setError(err.response?.data?.error || 'Registration failed')
     }
   }
