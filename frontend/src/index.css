@@ -34,7 +34,7 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --bg: #16171d;
+    --bg: #4cff7f;
     --border: #2e303a;
     --code-bg: #1f2028;
     --accent: #c084fc;
@@ -108,4 +108,39 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.nav__left, .nav__right {
+  width: 80px; 
+  display: flex;
+  align-items: center;
+}
+
+.nav__right { justify-content: flex-end; }
+
+.nav__center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.nav__brand {
+  text-decoration: none;
+  font-weight: 700;
+  color: #111827;
+}
+
+.nav__icon {
+  text-decoration: none;
+  font-size: 20px;
+  color: #111827;
 }

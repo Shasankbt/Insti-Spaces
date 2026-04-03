@@ -1,0 +1,245 @@
+/* Converted from the provided SCSS to plain CSS */
+
+* {
+  box-sizing: border-box;
+}
+
+.login-prism-page {
+  font-family: Tahoma, Verdana, Segoe, sans-serif;
+  font-size: 14px;
+  background: #f6fffd;
+  padding: 20px;
+  text-align: center;
+  min-height: 100vh;
+}
+
+.login-prism-nav {
+  margin: 20px 0;
+  padding: 0;
+}
+
+.login-prism-nav li {
+  display: inline-block;
+  list-style-type: none;
+  font-size: 1em;
+  margin: 0 10px;
+  color: #42509e;
+  position: relative;
+  cursor: pointer;
+}
+
+.login-prism-nav li:after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 20px;
+  border-bottom: 1px solid #42509e;
+  transition: all ease-in 0.25s;
+}
+
+.login-prism-nav li:hover:after {
+  width: 100%;
+}
+
+.login-prism-wrapper {
+  width: 250px;
+  height: 350px;
+  margin: 60px auto;
+  perspective: 600px;
+  text-align: left;
+}
+
+.login-rec-prism {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transform: translateZ(-100px);
+  transition: transform 0.5s ease-in;
+}
+
+.login-face {
+  position: absolute;
+  width: 250px;
+  height: 350px;
+  padding: 20px;
+  background: rgba(250, 250, 250, 0.96);
+  border: 3px solid #07ad90;
+  border-radius: 3px;
+}
+
+.login-face .content {
+  color: #666;
+}
+
+.login-face .content h2 {
+  font-size: 1.2em;
+  color: #07ad90;
+}
+
+.login-face .content small {
+  font-size: 0.7em;
+}
+
+.login-face .content .field-wrapper {
+  margin-top: 30px;
+  position: relative;
+}
+
+.login-face .content .field-wrapper label {
+  position: absolute;
+  pointer-events: none;
+  font-size: 0.85em;
+  top: 40%;
+  left: 0;
+  transform: translateY(-50%);
+  transition: all ease-in 0.25s;
+  color: #999;
+}
+
+.login-face .content .field-wrapper input[type="text"],
+.login-face .content .field-wrapper input[type="password"],
+.login-face .content .field-wrapper input[type="submit"],
+.login-face .content .field-wrapper textarea {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.login-face .content .field-wrapper input[type="text"]:focus,
+.login-face .content .field-wrapper input[type="password"]:focus,
+.login-face .content .field-wrapper input[type="submit"]:focus,
+.login-face .content .field-wrapper textarea:focus {
+  outline: none;
+}
+
+.login-face .content .field-wrapper input[type="text"],
+.login-face .content .field-wrapper input[type="password"],
+.login-face .content .field-wrapper textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  line-height: 2em;
+  border-bottom: 1px solid #07ad90;
+  color: #666;
+}
+
+.login-face .content .field-wrapper input[type="text"]::placeholder,
+.login-face .content .field-wrapper input[type="password"]::placeholder,
+.login-face .content .field-wrapper textarea::placeholder {
+  opacity: 0;
+}
+
+.login-face .content .field-wrapper input[type="text"]:focus + label,
+.login-face .content .field-wrapper input[type="password"]:focus + label,
+.login-face .content .field-wrapper textarea:focus + label,
+.login-face .content .field-wrapper input[type="text"]:not(:placeholder-shown) + label,
+.login-face .content .field-wrapper input[type="password"]:not(:placeholder-shown) + label,
+.login-face .content .field-wrapper textarea:not(:placeholder-shown) + label {
+  top: -35%;
+  color: #42509e;
+}
+
+.login-face .content .field-wrapper textarea:focus + label,
+.login-face .content .field-wrapper textarea:not(:placeholder-shown) + label {
+  top: -25%;
+}
+
+.login-face .content .field-wrapper input[type="submit"],
+.login-face .content .field-wrapper button[type="submit"] {
+  cursor: pointer;
+  width: 100%;
+  background: #07ad90;
+  line-height: 2em;
+  color: #fff;
+  border: 1px solid #07ad90;
+  border-radius: 3px;
+  padding: 5px;
+}
+
+.login-face .content .field-wrapper input[type="submit"]:hover,
+.login-face .content .field-wrapper button[type="submit"]:hover {
+  opacity: 0.9;
+}
+
+.login-face .content .field-wrapper input[type="submit"]:active,
+.login-face .content .field-wrapper button[type="submit"]:active {
+  transform: scale(0.96);
+}
+
+.login-face .content .field-wrapper textarea {
+  resize: none;
+  line-height: 1em;
+}
+
+.login-face .thank-you-msg {
+  position: absolute;
+  width: 200px;
+  height: 130px;
+  text-align: center;
+  font-size: 2em;
+  color: #07ad90;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.login-face .thank-you-msg:after {
+  position: absolute;
+  content: '';
+  width: 50px;
+  height: 25px;
+  border: 10px solid #07ad90;
+  border-right: 0;
+  border-top: 0;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(0deg) scale(0);
+  animation: login-success ease-in 0.15s forwards;
+  animation-delay: 0.25s;
+}
+
+@keyframes login-success {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg) scale(0);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(-45deg) scale(1);
+  }
+}
+
+.login-face-front {
+  transform: rotateY(0deg) translateZ(125px);
+}
+
+.login-face-back {
+  transform: rotateY(180deg) translateZ(125px);
+}
+
+.login-face-right {
+  transform: rotateY(90deg) translateZ(125px);
+}
+
+.login-face-left {
+  transform: rotateY(-90deg) translateZ(125px);
+}
+
+.login-face-bottom {
+  height: 250px;
+  transform: rotateX(-90deg) translateZ(225px);
+}
+
+.login-prism-links {
+  display: block;
+  margin: 20px 0;
+  font-size: 0.75em;
+  text-align: center;
+  color: #42509e;
+  cursor: pointer;
+}
+
+.login-error {
+  margin-top: 10px;
+  color: #ff5751;
+  font-size: 0.9em;
+}
