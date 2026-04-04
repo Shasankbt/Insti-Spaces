@@ -5,6 +5,11 @@ const { createUser, findUserByEmail } = require('../db');
 
 router.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
+
+  if(username === '') return res.status(409).json({error : 'empty username not allowed'});
+  if(email === '') return res.status(409).json({error : 'empty email not allowed'})
+  if(password === '') return res.status(409).json({error : 'empty password not allowed'});
+
   try {
     const existing = await findUserByEmail(email);
     if (existing) return res.status(409).json({ error: 'Email already in use' });
