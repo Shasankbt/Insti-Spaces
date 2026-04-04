@@ -47,7 +47,7 @@ export const inviteToSpace = ({ spaceId, username, token }) =>
   axios.post(`${API}/spaces/${spaceId}/invite`, { username }, authHeaders(token));
 
 export const generateSpaceInviteLink = ({ spaceId, token }) =>
-  axios.post(`${API}/spaces/${spaceId}/invite-link`, {}, authHeaders(token));
+  axios.get(`${API}/spaces/${spaceId}/generate-invite-link`, authHeaders(token))
 
 export const leaveSpace = ({ spaceId, token }) =>
   axios.delete(`${API}/spaces/${spaceId}/leave`, authHeaders(token));

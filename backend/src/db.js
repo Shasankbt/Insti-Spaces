@@ -246,12 +246,13 @@ const listFriends = async ({ userId, limit = 200 }) => {
   return rows;
 };
 
-const getUserSpaceRole = async ({ spaceId, userId }) => {
+// space related queries
+const getUserInSpace = async ({ spaceId, userId }) => {
   const { rows } = await pool.query(
-    `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
+    `SELECT * FROM following WHERE spaceid = $1 AND userid = $2`,
     [spaceId, userId]
   );
-  return rows[0]?.role || null;
+  return rows[0] || null;
 };
 
 const addUserToSpace = async ({ spaceId, userId, role = 'viewer' }) => {
@@ -265,6 +266,54 @@ const addUserToSpace = async ({ spaceId, userId, role = 'viewer' }) => {
   return rows[0] || null;
 };
 
+const getSpaceById = async ({ spaceId }) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM spaces WHERE id = $1`,
+    [spaceId]
+  )
+  console.log(spaceId, rows)
+  return rows[0] || null
+}
+
+const getSpaceMembers = async (spaceId) => {
+  const { rows } = await pool.query(
+    `SELECT u.id as userid, u.username, f.role
+     FROM following f
+     JOIN users u ON u.id = f.userid
+     WHERE f.spaceid = $1`,
+    [spaceId]
+  )
+  return rows
+}
+
+const generateInviteLink = async (spaceId, role) => {
+  const { rows } = await pool.query(
+    `INSERT INTO invite_links (space_id, role, expires_at, single_use)
+     VALUES ($1, $2, NOW() + INTERVAL '30 days', FALSE)
+     RETURNING token`,
+    [spaceId, role]
+  );
+  return rows[0].token;
+};
+
+const fetchInviteLink = async (token) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM invite_links
+     WHERE token = $1
+       AND (expires_at IS NULL OR expires_at > NOW())
+       AND (single_use = FALSE OR used = FALSE)`,
+    [token]
+  );
+  return rows[0] || null;
+};
+
+const markLinkInviteUsed = async (token) => {
+  await pool.query(
+    `UPDATE invite_links SET used = TRUE WHERE token = $1`,
+    [token]
+  );
+};
+
 module.exports = {
   pool,
   createUser,
@@ -276,6 +325,13 @@ module.exports = {
   listFriendRequests,
   acceptFriendRequest,
   listFriends,
-  getUserSpaceRole,
+
+  getUserInSpace,
   addUserToSpace,
+  getSpaceById,
+  getSpaceMembers,
+
+  generateInviteLink,
+  fetchInviteLink,
+  markLinkInviteUsed
 };

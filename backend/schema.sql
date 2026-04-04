@@ -49,6 +49,18 @@ CREATE TABLE IF NOT EXISTS following (
   CONSTRAINT role_check CHECK (role IN ('viewer', 'moderator', 'contributor', 'admin'))
 );
 
+CREATE TABLE IF NOT EXISTS invite_links (
+  id SERIAL PRIMARY KEY,
+  token UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+  space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+  expires_at TIMESTAMPTZ,
+  single_use BOOLEAN DEFAULT FALSE,
+  used BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT role_check CHECK (role IN ('viewer', 'moderator', 'contributor', 'admin'))
+);
+
 CREATE TABLE IF NOT EXISTS space_posts (
   id SERIAL PRIMARY KEY,
   spaceid INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,

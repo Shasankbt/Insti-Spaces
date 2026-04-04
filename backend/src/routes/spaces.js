@@ -4,8 +4,8 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const authenticate = require('../middleware');
-const { pool, getUserSpaceRole, addUserToSpace, findUserByUsername } = require('../db');
+const { authenticate } = require('../middleware');
+const { pool, getUserInSpace, addUserToSpace, findUserByUsername, generateInviteLink, fetchInviteLink, markLinkInviteUsed } = require('../db');
 
 const storage = multer.diskStorage({
   destination: path.join(__dirname, '../../uploads'),
@@ -80,30 +80,6 @@ router.post('/create', authenticate, async (req, res) => {
   }
 });
 
-// GET /spaces/join?token=... — join a space via invite link
-router.get('/join', authenticate, async (req, res) => {
-  const { token } = req.query;
-  if (!token) return res.status(400).json({ error: 'token is required' });
-
-  let payload;
-  try {
-    payload = jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    return res.status(400).json({ error: 'Invalid or expired invite token' });
-  }
-
-  if (payload.type !== 'space-invite') {
-    return res.status(400).json({ error: 'Invalid token type' });
-  }
-
-  try {
-    await addUserToSpace({ spaceId: payload.spaceId, userId: req.user.id });
-    res.json({ message: 'Joined space', spaceId: payload.spaceId });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // DELETE /spaces/:spaceId/leave — leave a space
 router.delete('/:spaceId/leave', authenticate, async (req, res) => {
   const spaceId = Number(req.params.spaceId);
@@ -134,8 +110,9 @@ router.post('/:spaceId/invite', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'spaceId and userId or username are required' });
   }
 
-  const requesterRole = await getUserSpaceRole({ spaceId, userId: req.user.id });
-  if (requesterRole !== 'admin') {
+  const membership = await getUserInSpace({ spaceId, userId: req.user.id });
+  if (!membership) return res.status(403).json({ error: 'Not a member of this space' });
+  if (membership.role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can invite' });
   }
 
@@ -154,26 +131,50 @@ router.post('/:spaceId/invite', authenticate, async (req, res) => {
 });
 
 // POST /spaces/:spaceId/invite-link — generate a signed invite link
-router.post('/:spaceId/invite-link', authenticate, async (req, res) => {
+router.get('/:spaceId/generate-invite-link', authenticate, async (req, res) => {
   const spaceId = Number(req.params.spaceId);
+  const inviteLinkRole = "viewer";
+  console.log("uyooo");
   if (!Number.isFinite(spaceId)) {
     return res.status(400).json({ error: 'Invalid spaceId' });
   }
 
-  const requesterRole = await getUserSpaceRole({ spaceId, userId: req.user.id });
-  if (requesterRole !== 'admin') {
+  const membership = await getUserInSpace({ spaceId: spaceId, userId: req.user.id });
+  if (!membership) return res.status(403).json({ error: 'Not a member of this space' });
+  if (membership.role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can generate invite links' });
   }
 
-  const token = jwt.sign(
-    { type: 'space-invite', spaceId },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+  // !! add check for inviteLinkRole
+  const token = await generateInviteLink(spaceId, inviteLinkRole);
 
   const inviteLink = `http://localhost:5173/spaces/join?token=${token}`;
   res.json({ inviteLink });
 });
+
+// GET /spaces/join?token=... — join a space via invite link
+router.post('/join-via-link', authenticate, async (req, res) => {
+  const token = req.body.token;
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'Invalid token' });
+  }
+
+  try {
+    const invite = await fetchInviteLink(token);
+    if (!invite) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+    const existing = await getUserInSpace({ spaceId: invite.space_id, userId: req.user.id });
+    if (existing) return res.status(409).json({ error: 'Already a member of this space' });
+
+    await addUserToSpace({ userId: req.user.id, spaceId: invite.space_id, role: invite.role });
+    await markLinkInviteUsed(token);
+    const space = await pool.query(`SELECT spacename FROM spaces WHERE id = $1`, [invite.space_id]);
+    res.json({ spaceName: space.rows[0].spacename });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // POST /spaces/:spaceId/contribute — upload photos to a space
 router.post(
@@ -186,8 +187,8 @@ router.post(
       return res.status(400).json({ error: 'Invalid spaceId' });
     }
 
-    const role = await getUserSpaceRole({ spaceId, userId: req.user.id });
-    if (!['admin', 'moderator', 'contributor'].includes(role)) {
+    const membership = await getUserInSpace({ spaceId, userId: req.user.id });
+    if (!membership || !['admin', 'moderator', 'contributor'].includes(membership.role)) {
       return res.status(403).json({ error: 'Only admins, moderators, and contributors can post' });
     }
 

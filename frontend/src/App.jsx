@@ -6,7 +6,9 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import AddFriends from "./pages/AddFriends";
 import Notifications from "./pages/Notifications";
-import Spaces from "./pages/Space";
+import Spaces from "./pages/Spaces";
+import JoinSpace from "./pages/JoinSpace";
+import SpaceView from "./pages/SpaceView";
 
 export default function App() {
   return (
@@ -20,6 +22,8 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/spaces" element={<Spaces />} />
+              <Route path="/spaces/join" element={<JoinSpace />} />
+              <Route path="/spaces/:id" element={<SpaceView />} />
               <Route path="/add-friends" element={<AddFriends />} />
               <Route path="/notifications" element={<Notifications />} />
             </Routes>

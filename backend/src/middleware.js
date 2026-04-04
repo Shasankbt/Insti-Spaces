@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { getUserInSpace } = require('./db');
+
 
 const authenticate = (req, res, next) => {
   const header = req.headers.authorization;
@@ -13,4 +15,23 @@ const authenticate = (req, res, next) => {
   }
 };
 
-module.exports = authenticate;
+
+const isMember = async (req, res, next) => {
+  const spaceId = Number(req.params.spaceId)
+  if (!Number.isFinite(spaceId)) {
+    return res.status(400).json({ error: 'Invalid spaceId' })
+  }
+
+  const member = await getUserInSpace({ spaceId, userId: req.user.id })
+  if (!member) {
+    return res.status(403).json({ error: 'Not a member of this space' })
+  }
+
+  req.member = member  // { userid, spaceid, role }
+  next()
+}
+
+module.exports = {
+  authenticate,
+  isMember
+};

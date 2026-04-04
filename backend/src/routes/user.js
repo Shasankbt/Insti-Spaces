@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const authenticate = require('../middleware');
+const { authenticate } = require('../middleware');
 
 const {
   searchUsers,
