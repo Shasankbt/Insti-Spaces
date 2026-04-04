@@ -19,6 +19,7 @@ app.use(cors({
 
 app.use('/auth', require('./routes/auth.js'));
 app.use('/friends', require('./routes/friends.js'));
-app.use('/user', require('./routes/user.js'))
+app.use('/user', require('./routes/user.js'));
+app.use('/spaces', require('./routes/spaces.js'));
 
 module.exports = app;

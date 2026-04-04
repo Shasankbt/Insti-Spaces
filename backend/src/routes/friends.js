@@ -5,7 +5,25 @@ const {
   findUserByUsername,
   createFriendRequest,
   acceptFriendRequest,
+  listFriends,
 } = require('../db');
+
+const getFriendsHandler = async (req, res) => {
+  try {
+    const limit = req.query.limit;
+    const friends = await listFriends({ userId: req.user.id, limit });
+    res.json({ friends });
+  } catch (err) {
+    const code = err.statusCode && Number.isInteger(err.statusCode) ? err.statusCode : 500;
+    res.status(code).json({ error: err.message || 'Failed to load friends' });
+  }
+};
+
+// get friends (GET /friends)
+router.get('/', authenticate, getFriendsHandler);
+
+// compatibility alias (GET /friends/friends)
+router.get('/friends', authenticate, getFriendsHandler);
 
 // create friend request
 router.post('/friend-requests', authenticate, async (req, res) => {

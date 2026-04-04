@@ -33,3 +33,12 @@ export const createFriendRequest = ({ toUserId, token }) =>
     { toUserId },
     authHeaders(token),
   );
+
+export const getFriends = ({ token }) =>
+  axios.get(`${API}/friends`, authHeaders(token));
+
+export const createSpace = ({ spacename, token }) =>
+  axios.post(`${API}/spaces/create`, { spacename }, authHeaders(token));
+
+export const getFollowingSpaces = ({ token }) =>
+  axios.get(`${API}/spaces`, authHeaders(token));

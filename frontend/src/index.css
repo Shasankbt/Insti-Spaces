@@ -34,7 +34,7 @@
   :root {
     --text: #9ca3af;
     --text-h: #f3f4f6;
-    --bg: #4cff7f;
+    --bg: #000000;
     --border: #2e303a;
     --code-bg: #1f2028;
     --accent: #c084fc;
@@ -58,12 +58,19 @@ body {
   width: 1126px;
   max-width: 100%;
   margin: 0 auto;
-  text-align: center;
   border-inline: 1px solid var(--border);
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
+}
+
+.app-layout {
+  display: flex;
+  min-height: 100svh;
+}
+
+.app-content {
+  flex: 1;
+  text-align: center;
 }
 
 h1,
@@ -77,20 +84,24 @@ h1 {
   font-size: 56px;
   letter-spacing: -1.68px;
   margin: 32px 0;
+
   @media (max-width: 1024px) {
     font-size: 36px;
     margin: 20px 0;
   }
 }
+
 h2 {
   font-size: 24px;
   line-height: 118%;
   letter-spacing: -0.24px;
   margin: 0 0 8px;
+
   @media (max-width: 1024px) {
     font-size: 20px;
   }
 }
+
 p {
   margin: 0;
 }
@@ -110,37 +121,202 @@ code {
   background: var(--code-bg);
 }
 
-.nav {
+.sidebar {
+  width: 180px;
+  min-height: 100svh;
+  border-right: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.nav__left, .nav__right {
-  width: 80px; 
-  display: flex;
-  align-items: center;
-}
-
-.nav__right { justify-content: flex-end; }
-
-.nav__center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  box-sizing: border-box;
 }
 
 .nav__brand {
   text-decoration: none;
   font-weight: 700;
   color: #111827;
+  font-size: 18px;
+  margin-bottom: 8px;
 }
 
-.nav__icon {
+.sidebar__link {
   text-decoration: none;
-  font-size: 20px;
-  color: #111827;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.sidebar__link:hover {
+  color: var(--accent);
+}
+
+/* ── Add Friends ── */
+
+.add-friends {
+  padding: 16px;
+  text-align: left;
+}
+
+.add-friends__title {
+  margin: 0;
+}
+
+.add-friends__tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.add-friends__form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.add-friends__input {
+  flex: 1;
+  padding: 10px;
+}
+
+.add-friends__error {
+  color: red;
+  margin-top: 12px;
+}
+
+.add-friends__results {
+  margin-top: 16px;
+}
+
+.add-friends__empty {
+  margin: 0;
+}
+
+.add-friends__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.add-friends__user-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.add-friends__username {
+  font-weight: 600;
+}
+
+.add-friends__status {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* ── Spaces ── */
+
+.spaces {
+  padding: 16px;
+  text-align: left;
+}
+
+.spaces__tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.spaces__tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.spaces__tab:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.spaces__tab--active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.spaces__panel {
+  margin-top: 4px;
+}
+
+.spaces__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spaces__card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spaces__card-name {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.spaces__card-role {
+  font-size: 13px;
+  color: var(--text);
+  text-transform: capitalize;
+  background: var(--code-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.spaces__form {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.spaces__input {
+  flex: 1;
+  padding: 10px;
+}
+
+.spaces__error {
+  color: red;
+  margin-top: 12px;
+}
+
+.spaces__success {
+  color: green;
+  margin-top: 12px;
+}
+
+.spaces__empty {
+  margin: 0;
+  color: var(--text);
+}
+
+.spaces__inline-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
 }

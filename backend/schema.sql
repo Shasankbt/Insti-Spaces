@@ -35,3 +35,16 @@ ON friend_requests (to_user_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friend_requests_from_status_created
 ON friend_requests (from_user_id, status, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS spaces (
+  id SERIAL PRIMARY KEY,
+  spacename VARCHAR(50) UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS following (
+  userid INTEGER NOT NULL REFERENCES users(id),
+  spaceid INTEGER NOT NULL REFERENCES spaces(id),
+  role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+  PRIMARY KEY (userid, spaceid),
+  CONSTRAINT role_check CHECK (role IN ('viewer', 'moderator', 'contributor', 'admin'))
+);

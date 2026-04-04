@@ -216,6 +216,36 @@ const acceptFriendRequest = async ({ requestId, userId }) => {
   }
 };
 
+const listFriends = async ({ userId, limit = 200 }) => {
+  const id = Number.parseInt(String(userId), 10);
+  if (!Number.isInteger(id)) {
+    const err = new Error('Invalid user id');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanLimit = Number.parseInt(String(limit), 10);
+  const finalLimit = Number.isInteger(cleanLimit) && cleanLimit > 0 ? Math.min(cleanLimit, 500) : 200;
+
+  const { rows } = await pool.query(
+    `SELECT
+       u.id,
+       u.username
+     FROM friends f
+     JOIN users u
+       ON u.id = CASE
+         WHEN f.fid = ($1::int) THEN f.sid
+         ELSE f.fid
+       END
+     WHERE f.fid = ($1::int) OR f.sid = ($1::int)
+     ORDER BY u.username ASC
+     LIMIT $2`,
+    [id, finalLimit]
+  );
+
+  return rows;
+};
+
 module.exports = {
   pool,
   createUser,
@@ -226,4 +256,5 @@ module.exports = {
   createFriendRequest,
   listFriendRequests,
   acceptFriendRequest,
+  listFriends,
 };
