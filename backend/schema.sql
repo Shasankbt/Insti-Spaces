@@ -48,3 +48,11 @@ CREATE TABLE IF NOT EXISTS following (
   PRIMARY KEY (userid, spaceid),
   CONSTRAINT role_check CHECK (role IN ('viewer', 'moderator', 'contributor', 'admin'))
 );
+
+CREATE TABLE IF NOT EXISTS space_posts (
+  id SERIAL PRIMARY KEY,
+  spaceid INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  userid INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  photo_url TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);

@@ -246,6 +246,25 @@ const listFriends = async ({ userId, limit = 200 }) => {
   return rows;
 };
 
+const getUserSpaceRole = async ({ spaceId, userId }) => {
+  const { rows } = await pool.query(
+    `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
+    [spaceId, userId]
+  );
+  return rows[0]?.role || null;
+};
+
+const addUserToSpace = async ({ spaceId, userId, role = 'viewer' }) => {
+  const { rows } = await pool.query(
+    `INSERT INTO following (userid, spaceid, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (userid, spaceid) DO NOTHING
+     RETURNING userid, spaceid, role`,
+    [userId, spaceId, role]
+  );
+  return rows[0] || null;
+};
+
 module.exports = {
   pool,
   createUser,
@@ -257,4 +276,6 @@ module.exports = {
   listFriendRequests,
   acceptFriendRequest,
   listFriends,
+  getUserSpaceRole,
+  addUserToSpace,
 };

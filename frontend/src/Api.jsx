@@ -42,3 +42,20 @@ export const createSpace = ({ spacename, token }) =>
 
 export const getFollowingSpaces = ({ token }) =>
   axios.get(`${API}/spaces`, authHeaders(token));
+
+export const inviteToSpace = ({ spaceId, username, token }) =>
+  axios.post(`${API}/spaces/${spaceId}/invite`, { username }, authHeaders(token));
+
+export const generateSpaceInviteLink = ({ spaceId, token }) =>
+  axios.post(`${API}/spaces/${spaceId}/invite-link`, {}, authHeaders(token));
+
+export const leaveSpace = ({ spaceId, token }) =>
+  axios.delete(`${API}/spaces/${spaceId}/leave`, authHeaders(token));
+
+export const contributeToSpace = ({ spaceId, formData, token }) =>
+  axios.post(`${API}/spaces/${spaceId}/contribute`, formData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });

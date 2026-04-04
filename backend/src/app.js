@@ -21,5 +21,6 @@ app.use('/auth', require('./routes/auth.js'));
 app.use('/friends', require('./routes/friends.js'));
 app.use('/user', require('./routes/user.js'));
 app.use('/spaces', require('./routes/spaces.js'));
+app.use('/uploads', express.static(require('path').join(__dirname, '../../uploads')));
 
 module.exports = app;
