@@ -18,6 +18,14 @@ const createUser = async (username, email, passwordHash) => {
   return rows[0];
 };
 
+const findUserById = async (id) => {
+  const { rows } = await pool.query(
+    `SELECT id, username, email FROM users WHERE id = $1`,
+    [id]
+  )
+  return rows[0] || null
+}
+
 const findUserByEmail = async (email) => {
   const { rows } = await pool.query(
     `SELECT * FROM users WHERE email = $1`,
@@ -211,6 +219,7 @@ const acceptFriendRequest = async ({ requestId, userId }) => {
 module.exports = {
   pool,
   createUser,
+  findUserById,
   findUserByEmail,
   findUserByUsername,
   searchUsers,

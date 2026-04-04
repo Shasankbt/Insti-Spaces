@@ -1,6 +1,12 @@
 const router = require('express').Router();
 const authenticate = require('../middleware');
 
+const {
+  findUserByUsername,
+  createFriendRequest,
+  acceptFriendRequest,
+} = require('../db');
+
 // create friend request
 router.post('/friend-requests', authenticate, async (req, res) => {
   try {

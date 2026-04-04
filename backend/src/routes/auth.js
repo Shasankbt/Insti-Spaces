@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { createUser, findUserByEmail } = require('../db');
+const authenticate = require('../middleware')
+const { createUser, findUserByEmail, findUserById } = require('../db');
 
 router.post('/register', async (req, res) => {
   const { username, email, password } = req.body;
@@ -43,5 +44,10 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Login failed' });
   }
 });
+
+router.get('/me', authenticate, async (req, res) => {
+  const user = await findUserById(req.user.id)
+  res.json({ user })
+})
 
 module.exports = router;

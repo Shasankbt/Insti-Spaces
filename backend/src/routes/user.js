@@ -1,6 +1,11 @@
 const router = require('express').Router();
 const authenticate = require('../middleware');
 
+const {
+  searchUsers,
+  listFriendRequests,
+} = require('../db');
+
 // display of friend requests
 router.get('/notifications', authenticate, async (req, res) => {
   try {

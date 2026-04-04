@@ -6,7 +6,7 @@ import { loginUser } from '../Api'
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState(null)
-  const { login } = useAuth()
+  const { login, user, loading } = useAuth()
   const navigate = useNavigate()
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
@@ -21,6 +21,15 @@ export default function Login() {
       setError(err.response?.data?.error || 'Login failed')
     }
   }
+
+  if (loading) return <p>Loading...</p>
+
+  if (user) return (
+    <div>
+      <p>You are already logged in as <strong>{user.username}</strong></p>
+      <button onClick={() => navigate('/')}>Go to Home</button>
+    </div>
+  )
 
   return (
     <div>

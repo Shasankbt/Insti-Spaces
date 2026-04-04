@@ -3,20 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Home() {
-  const { user, logout } = useAuth()
+  const { user, logout, loading } = useAuth()
   const navigate = useNavigate()
 
-  // redirect to login if not logged in
   useEffect(() => {
-    if (!user) navigate('/login')
-  }, [user])
+    if (!loading && !user) navigate('/login')
+  }, [user, loading])
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
 
-  if (!user) return null  // avoid flash before redirect
+  if (loading) return <p>Loading...</p>
+  if (!user) return null
 
   return (
     <div>
