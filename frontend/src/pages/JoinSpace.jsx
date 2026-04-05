@@ -1,51 +1,79 @@
 // pages/JoinSpace.jsx
-import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import axios from "axios";
 
 export default function JoinSpace() {
-  const [searchParams] = useSearchParams()
-  const [status, setStatus] = useState('loading') // loading | success | error
-  const [message, setMessage] = useState('')
-  const { user, loading, token } = useAuth()
-  const navigate = useNavigate()
+  const [searchParams] = useSearchParams();
+  const [status, setStatus] = useState("loading"); // loading | success | error
+  const [message, setMessage] = useState("");
+  const { user, loading, token } = useAuth();
+  const navigate = useNavigate();
+  const hasJoinedRef = useRef(false);
 
-  const inviteToken = searchParams.get('token')  // reads ?token=xxx from URL
+  const inviteToken = searchParams.get("token"); // reads ?token=xxx from URL
 
   useEffect(() => {
-    if (loading) return
+    if (loading) return;
     if (!user) {
       // not logged in, send to login and come back after
-      navigate(`/login?redirect=${encodeURIComponent(`/spaces/join?token=${inviteToken}`)}`)
-      return
+      navigate(
+        `/login?redirect=${encodeURIComponent(`/spaces/join?token=${inviteToken}`)}`,
+      );
+      return;
     }
     if (!inviteToken) {
-      setStatus('error')
-      setMessage('Invalid invite link')
-      return
+      setStatus("error");
+      setMessage("Invalid invite link");
+      return;
     }
 
-    // hit the backend to join
-    axios.post(`http://localhost:3000/spaces/join-via-link`, { token: inviteToken }, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => {
-        setStatus('success')
-        setMessage(res.data.spaceName)
-      })
-      .catch(err => {
-        setStatus('error')
-        setMessage(err.response?.data?.error || 'Invalid or expired invite link')
-      })
-  }, [loading, user, token, inviteToken])
+    // React 18 StrictMode runs effects twice in dev; avoid double-POST.
+    if (hasJoinedRef.current) return;
+    hasJoinedRef.current = true;
 
-  if (status === 'loading') return <p>Joining space...</p>
-  if (status === 'error') return <p style={{ color: 'red' }}>{message}</p>
-  if (status === 'success') return (
-    <div>
-      <p>Successfully joined <strong>{message}</strong>!</p>
-      <button onClick={() => navigate('/')}>Go to Home</button>
-    </div>
-  )
+    // hit the backend to join
+    axios
+      .post(
+        `http://localhost:3000/spaces/join-via-link`,
+        { token: inviteToken },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+      .then((res) => {
+        const spaceId = res.data?.spaceId;
+        if (spaceId) {
+          navigate(`/spaces/${spaceId}`, { replace: true });
+          return;
+        }
+        setStatus("success");
+        setMessage(res.data?.spaceName || "the space");
+      })
+      .catch((err) => {
+        if (err.response?.status === 409) {
+          // Backward-compat for older backend behavior.
+          setStatus("success");
+          setMessage("this space");
+          return;
+        }
+        setStatus("error");
+        setMessage(
+          err.response?.data?.error || "Invalid or expired invite link",
+        );
+      });
+  }, [loading, user, token, inviteToken]);
+
+  if (status === "loading") return <p>Joining space...</p>;
+  if (status === "error") return <p style={{ color: "red" }}>{message}</p>;
+  if (status === "success")
+    return (
+      <div>
+        <p>
+          Successfully joined <strong>{message}</strong>!
+        </p>
+        <button onClick={() => navigate("/")}>Go to Home</button>
+      </div>
+    );
 }

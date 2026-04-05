@@ -4,7 +4,7 @@ import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import AddFriends from "./pages/AddFriends";
+import Friends from "./pages/Friends";
 import Notifications from "./pages/Notifications";
 import Spaces from "./pages/Spaces";
 import JoinSpace from "./pages/JoinSpace";
@@ -24,7 +24,7 @@ export default function App() {
               <Route path="/spaces" element={<Spaces />} />
               <Route path="/spaces/join" element={<JoinSpace />} />
               <Route path="/spaces/:id" element={<SpaceView />} />
-              <Route path="/add-friends" element={<AddFriends />} />
+              <Route path="/friends" element={<Friends />} />
               <Route path="/notifications" element={<Notifications />} />
             </Routes>
           </main>

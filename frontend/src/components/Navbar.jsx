@@ -15,7 +15,7 @@ export default function Navbar() {
       </Link>
       {isLoggedIn && (
         <>
-          <Link className="sidebar__link" to="/add-friends">
+          <Link className="sidebar__link" to="/friends">
             Friends
           </Link>
           <Link className="sidebar__link" to="/spaces">

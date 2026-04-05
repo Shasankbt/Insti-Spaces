@@ -68,3 +68,23 @@ CREATE TABLE IF NOT EXISTS space_posts (
   photo_url TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS role_requests (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+  space_id   INTEGER NOT NULL REFERENCES spaces(id)  ON DELETE CASCADE,
+  role       VARCHAR(20) NOT NULL,
+  status     VARCHAR(10) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
+
+  CONSTRAINT role_requests_status_check CHECK (status IN ('pending', 'accepted', 'rejected')),
+  CONSTRAINT role_requests_role_check   CHECK (role IN ('contributor', 'moderator', 'admin')),
+  CONSTRAINT role_requests_no_viewer    CHECK (role <> 'viewer')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_role_requests_pending
+ON role_requests (user_id, space_id)
+WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_space_posts_spaceid ON space_posts (spaceid);

@@ -22,9 +22,6 @@ const getFriendsHandler = async (req, res) => {
 // get friends (GET /friends)
 router.get('/', authenticate, getFriendsHandler);
 
-// compatibility alias (GET /friends/friends)
-router.get('/friends', authenticate, getFriendsHandler);
-
 // create friend request
 router.post('/friend-requests', authenticate, async (req, res) => {
   try {

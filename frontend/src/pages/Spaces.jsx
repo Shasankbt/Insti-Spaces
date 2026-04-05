@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { getFollowingSpaces, createSpace } from "../Api";
 
 export default function Spaces() {
-  const { user, token } = useAuth();
+  const { user, token, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [activeTab, setActiveTab] = useState("my-spaces");
   const [spaces, setSpaces] = useState([]);
@@ -18,8 +19,14 @@ export default function Spaces() {
   const [createSuccess, setCreateSuccess] = useState(null);
 
   useEffect(() => {
-    if (!user || !token) navigate("/login");
-  }, [user, token, navigate]);
+    if (loading) return;
+    if (!user || !token) {
+      navigate(
+        `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`,
+        { replace: true },
+      );
+    }
+  }, [user, token, loading, navigate, location.pathname, location.search]);
 
   const loadSpaces = useCallback(async () => {
     setSpacesError(null);
@@ -47,7 +54,9 @@ export default function Spaces() {
     try {
       setCreating(true);
       const res = await createSpace({ spacename: clean, token });
-      setCreateSuccess(`Space "${res.data.space?.spacename ?? clean}" created!`);
+      setCreateSuccess(
+        `Space "${res.data.space?.spacename ?? clean}" created!`,
+      );
       setSpacename("");
       loadSpaces();
     } catch (err) {
@@ -57,7 +66,8 @@ export default function Spaces() {
     }
   };
 
-  if (!user) return null;
+  if (loading) return <p className="spaces__empty">Loading…</p>;
+  if (!user || !token) return null;
 
   return (
     <div className="spaces">
@@ -102,10 +112,7 @@ export default function Spaces() {
                     <div className="spaces__card-role">{s.role}</div>
                   </div>
                   {/* just navigate into the space */}
-                  <Link
-                    to={`/spaces/${s.id}`}
-                    className="spaces__action-btn"
-                  >
+                  <Link to={`/spaces/${s.id}`} className="spaces__action-btn">
                     Open
                   </Link>
                 </div>

@@ -3,13 +3,13 @@ const { authenticate } = require('../middleware');
 
 const {
   searchUsers,
-  listFriendRequests,
+  listNotifications,
 } = require('../db');
 
-// display of friend requests
+// display of friend requests , role requests
 router.get('/notifications', authenticate, async (req, res) => {
   try {
-    const items = await listFriendRequests({ userId: req.user.id, limit: 50 });
+    const items = await listNotifications({ userId: req.user.id, limit: 50 });
     res.json({ items });
   } catch (err) {
     console.error(err);
