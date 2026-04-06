@@ -1,6 +1,6 @@
 const { pool } = require('../db');
 
-const roleRank = { viewer: 1, moderator: 2, contributor: 3, admin: 4 };
+const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
 
 class HttpError extends Error {
   constructor(status, errorOrMessage) {

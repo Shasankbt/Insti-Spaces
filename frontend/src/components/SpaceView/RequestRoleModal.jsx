@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import { getRoleRequest, requestRole, cancelRoleRequest } from "../../Api";
 
-const roleRank = { viewer: 1, moderator: 2, contributor: 3, admin: 4 };
+const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
 
 export default function RequestRoleModal({ space, token, onClose }) {
   const [loading, setLoading] = useState(true);
