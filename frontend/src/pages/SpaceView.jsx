@@ -17,6 +17,8 @@ export default function SpaceView() {
 
   const {
     space,
+    spaceLoading,
+    spaceError,
     members,
     membersLoading,
     roleUpdatingUserId,
@@ -40,8 +42,20 @@ export default function SpaceView() {
     }
   }, [user, token, loading, navigate, location.pathname, location.search]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (!user || !token) return;
+    if (spaceLoading) return;
+
+    if (spaceError) {
+      navigate("/spaces", { replace: true });
+    }
+  }, [user, token, loading, spaceLoading, spaceError, navigate]);
+
   if (loading) return <p>Loading…</p>;
   if (!user || !token) return null;
+  if (spaceLoading) return <p>Loading…</p>;
+  if (spaceError) return null;
   if (!space) return <p>Loading…</p>;
 
   return (
