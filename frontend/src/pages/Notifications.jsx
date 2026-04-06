@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import useRequireAuth from "../hooks/useRequireAuth";
 import {
   acceptFriendRequest,
   acceptRoleRequest,
@@ -9,25 +8,18 @@ import {
 } from "../Api";
 
 export default function Notifications() {
-  const { user, token, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const {
+    user,
+    token,
+    loading: authLoading,
+    isAuthenticated,
+  } = useRequireAuth();
 
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
   const [actingId, setActingId] = useState(null);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user || !token) {
-      navigate(
-        `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`,
-        { replace: true },
-      );
-    }
-  }, [user, token, authLoading, navigate, location.pathname, location.search]);
 
   const load = async () => {
     setError(null);
@@ -86,7 +78,7 @@ export default function Notifications() {
   };
 
   if (authLoading) return <p style={{ marginTop: 12 }}>Loading…</p>;
-  if (!user || !token) return null;
+  if (!isAuthenticated) return null;
 
   return (
     <div style={{ padding: 16, textAlign: "left" }}>

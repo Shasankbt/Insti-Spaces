@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useParams, useNavigate } from "react-router-dom";
+import useRequireAuth from "../hooks/useRequireAuth";
 import useSpaceView from "../hooks/useSpaceView";
 import MembersList from "../components/SpaceView/MembersList";
 import InviteModal from "../components/SpaceView/InviteModal";
@@ -11,9 +11,8 @@ import DeleteSpaceModal from "../components/SpaceView/DeleteSpaceModal";
 
 export default function SpaceView() {
   const { id } = useParams();
-  const { user, token, loading } = useAuth();
+  const { user, token, loading, isAuthenticated } = useRequireAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const {
     space,
@@ -34,26 +33,16 @@ export default function SpaceView() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user || !token) {
-      navigate(
-        `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`,
-        { replace: true },
-      );
-    }
-  }, [user, token, loading, navigate, location.pathname, location.search]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user || !token) return;
+    if (!isAuthenticated) return;
     if (spaceLoading) return;
 
     if (spaceError) {
       navigate("/spaces", { replace: true });
     }
-  }, [user, token, loading, spaceLoading, spaceError, navigate]);
+  }, [isAuthenticated, loading, spaceLoading, spaceError, navigate]);
 
   if (loading) return <p>Loading…</p>;
-  if (!user || !token) return null;
+  if (!isAuthenticated) return null;
   if (spaceLoading) return <p>Loading…</p>;
   if (spaceError) return null;
   if (!space) return <p>Loading…</p>;

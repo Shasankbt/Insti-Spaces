@@ -1,12 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, Link, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { Link } from "react-router-dom";
+import useRequireAuth from "../hooks/useRequireAuth";
 import { getFollowingSpaces, createSpace } from "../Api";
 
 export default function Spaces() {
-  const { user, token, loading } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { user, token, loading, isAuthenticated } = useRequireAuth();
 
   const [activeTab, setActiveTab] = useState("my-spaces");
   const [spaces, setSpaces] = useState([]);
@@ -17,16 +15,6 @@ export default function Spaces() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(null);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user || !token) {
-      navigate(
-        `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`,
-        { replace: true },
-      );
-    }
-  }, [user, token, loading, navigate, location.pathname, location.search]);
 
   const loadSpaces = useCallback(async () => {
     setSpacesError(null);
@@ -67,7 +55,7 @@ export default function Spaces() {
   };
 
   if (loading) return <p className="spaces__empty">Loading…</p>;
-  if (!user || !token) return null;
+  if (!isAuthenticated) return null;
 
   return (
     <div className="spaces">

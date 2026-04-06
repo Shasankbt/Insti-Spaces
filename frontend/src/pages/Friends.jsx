@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import useRequireAuth from "../hooks/useRequireAuth";
 import { createFriendRequest, searchUsers, getFriends } from "../Api";
 
 export default function Friends() {
-  const { user, token, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const {
+    user,
+    token,
+    loading: authLoading,
+    isAuthenticated,
+  } = useRequireAuth();
 
   const [activeTab, setActiveTab] = useState("friends"); // "friends" | "search"
 
@@ -21,16 +23,6 @@ export default function Friends() {
   const [searchError, setSearchError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [addingId, setAddingId] = useState(null);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user || !token) {
-      navigate(
-        `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`,
-        { replace: true },
-      );
-    }
-  }, [user, token, authLoading, navigate, location.pathname, location.search]);
 
   const loadFriends = useCallback(async () => {
     setFriendsError(null);
@@ -90,7 +82,7 @@ export default function Friends() {
   };
 
   if (authLoading) return <p className="add-friends__empty">Loading…</p>;
-  if (!user || !token) return null;
+  if (!isAuthenticated) return null;
 
   return (
     <div className="add-friends">
