@@ -73,5 +73,6 @@ export default function useSpaceView({ id, token }) {
     roleUpdatingUserId,
     roleUpdateError,
     handleRoleChange,
+    fetchMembers,
   };
 }

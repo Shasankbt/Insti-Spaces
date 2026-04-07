@@ -2,7 +2,7 @@ import { useState } from "react";
 import Modal from "./Modal";
 import { inviteToSpace, generateSpaceInviteLink } from "../../Api";
 
-export default function InviteModal({ space, token, onClose }) {
+export default function InviteModal({ space, token, onClose, onInviteSuccess }) {
   const [tab, setTab] = useState("username");
   const [username, setUsername] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -24,6 +24,7 @@ export default function InviteModal({ space, token, onClose }) {
       await inviteToSpace({ spaceId: space.id, username: clean, token });
       setInviteSuccess(`${clean} invited!`);
       setUsername("");
+      if (onInviteSuccess) onInviteSuccess();
     } catch (err) {
       setInviteError(err.response?.data?.error || "Failed to invite");
     } finally {

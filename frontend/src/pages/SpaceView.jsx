@@ -23,6 +23,7 @@ export default function SpaceView() {
     roleUpdatingUserId,
     roleUpdateError,
     handleRoleChange,
+    fetchMembers,
   } = useSpaceView({ id, token });
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -85,14 +86,15 @@ export default function SpaceView() {
         <InviteModal
           space={space}
           token={token}
-          onClose={() => setInviteOpen(false)}
+          onInviteSuccess={() => fetchMembers()}
+          onClose={() =>  setInviteOpen(false)}
         />
       )}
       {contributeOpen && (
         <ContributeModal
           space={space}
           token={token}
-          onClose={() => setContributeOpen(false)}
+          onClose={() =>  setContributeOpen(false)}
         />
       )}
       {leaveOpen && (
@@ -102,14 +104,14 @@ export default function SpaceView() {
           members={members}
           currentUserId={user?.id}
           onLeave={() => navigate("/spaces")}
-          onClose={() => setLeaveOpen(false)}
+          onClose={() =>  setLeaveOpen(false)}
         />
       )}
       {requestRoleOpen && (
         <RequestRoleModal
           space={space}
           token={token}
-          onClose={() => setRequestRoleOpen(false)}
+          onClose={() =>  setRequestRoleOpen(false)}
         />
       )}
       {deleteOpen && (
@@ -117,7 +119,7 @@ export default function SpaceView() {
           space={space}
           token={token}
           onDeleted={() => navigate("/spaces")}
-          onClose={() => setDeleteOpen(false)}
+          onClose={() =>  setDeleteOpen(false)}
         />
       )}
     </div>
