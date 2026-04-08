@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useRequireAuth from "../hooks/useRequireAuth";
 import {
   acceptFriendRequest,
@@ -6,6 +6,7 @@ import {
   getNotifications,
   rejectRoleRequest,
 } from "../Api";
+import { POLL_INTERVAL } from "../constants";
 
 export default function Notifications() {
   const {
@@ -20,22 +21,42 @@ export default function Notifications() {
   const [loading, setLoading] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
   const [actingId, setActingId] = useState(null);
+  const sinceRef = useRef(null);
 
-  const load = async () => {
-    setError(null);
+  const load = async (since = null) => {
+    const fetchedAt = new Date().toISOString();
+    if (!since) { setError(null); setLoading(true); }
     try {
-      setLoading(true);
-      const res = await getNotifications({ token });
-      setItems(res.data.items || []);
+      const res = await getNotifications({ token, since });
+      const delta = res.data.items || [];
+      if (!since) {
+        setItems(delta.filter((n) => !n.deleted));
+      } else {
+        setItems((prev) => {
+          const map = new Map(prev.map((n) => [n.uid, n]));
+          for (const n of delta) {
+            if (n.deleted) map.delete(n.uid);
+            else map.set(n.uid, n);
+          }
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+          );
+        });
+      }
+      sinceRef.current = fetchedAt;
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to load notifications");
+      if (!since) setError(err.response?.data?.error || "Failed to load notifications");
     } finally {
-      setLoading(false);
+      if (!since) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (user && token) load();
+    if (!user || !token) return;
+    sinceRef.current = null;
+    load();
+    const interval = setInterval(() => load(sinceRef.current), POLL_INTERVAL);
+    return () => clearInterval(interval);
   }, [user, token]);
 
   const onAccept = async (requestId) => {

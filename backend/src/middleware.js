@@ -32,7 +32,6 @@ const isMember = async (req, res, next) => {
 }
 
 const deltaSync = async (req, res, next) => {
-  console.log("req.query.since: " , req.query.since)
   const since = req.query.since
 
   const sinceDate = since ? new Date(since) : new Date(0)  // epoch if not given

@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import useRequireAuth from "../hooks/useRequireAuth";
 import { createFriendRequest, searchUsers, getFriends } from "../Api";
+import { POLL_INTERVAL } from "../constants";
 
 export default function Friends() {
   const {
@@ -23,23 +24,44 @@ export default function Friends() {
   const [searchError, setSearchError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [addingId, setAddingId] = useState(null);
+  const lastPrefixRef = useRef(null);
 
-  const loadFriends = useCallback(async () => {
-    setFriendsError(null);
+  const loadFriends = useCallback(async (silent = false) => {
+    if (!silent) { setFriendsError(null); setFriendsLoading(true); }
     try {
-      setFriendsLoading(true);
       const res = await getFriends({ token });
       setFriends(res.data.friends || []);
     } catch (err) {
-      setFriendsError(err.response?.data?.error || "Failed to load friends");
+      if (!silent) setFriendsError(err.response?.data?.error || "Failed to load friends");
     } finally {
-      setFriendsLoading(false);
+      if (!silent) setFriendsLoading(false);
     }
   }, [token]);
 
+  const refreshSearch = useCallback(async (searchPrefix) => {
+    if (!searchPrefix) return;
+    try {
+      const res = await searchUsers({ prefix: searchPrefix, token });
+      setResults(res.data.users || []);
+    } catch {
+      // silent — don't overwrite searchError on background poll
+    }
+  }, [token]);
+
+  // Friends tab: load once + poll while tab is active
   useEffect(() => {
-    if (activeTab === "friends") loadFriends();
-  }, [activeTab, loadFriends]);
+    if (!user || !token || activeTab !== "friends") return;
+    loadFriends();
+    const interval = setInterval(() => loadFriends(true), POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [activeTab, user, token, loadFriends]);
+
+  // Search tab: poll last searched prefix while tab is active
+  useEffect(() => {
+    if (!user || !token || activeTab !== "search") return;
+    const interval = setInterval(() => refreshSearch(lastPrefixRef.current), POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [activeTab, user, token, refreshSearch]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -48,6 +70,7 @@ export default function Friends() {
     const clean = prefix.trim();
     if (!clean) {
       setResults([]);
+      lastPrefixRef.current = null;
       return;
     }
 
@@ -55,6 +78,7 @@ export default function Friends() {
       setLoading(true);
       const res = await searchUsers({ prefix: clean, token });
       setResults(res.data.users || []);
+      lastPrefixRef.current = clean;
     } catch (err) {
       setSearchError(err.response?.data?.error || "Search failed");
     } finally {

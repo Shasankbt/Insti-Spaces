@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS role_requests (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_role_requests_pending
 ON role_requests (user_id, space_id)
-WHERE status = 'pending';
+WHERE status = 'pending' AND deleted = false;
 
 CREATE INDEX IF NOT EXISTS idx_space_posts_spaceid ON space_posts (spaceid);
 

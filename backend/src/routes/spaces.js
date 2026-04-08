@@ -26,20 +26,17 @@ router.use('/:spaceId', require('./spaceContent'));
 
 // GET /spaces — list spaces the authenticated user follows
 router.get('/', authenticate, deltaSync, async (req, res) => {
-  // console.log("getting spaces");
   try {
     const { rows } = await pool.query(
-      `SELECT s.id, s.spacename, f.role, f.deleted, f.updated_at
+      `SELECT s.id, s.spacename, f.role, f.updated_at
        FROM following f
        JOIN spaces s ON s.id = f.spaceid
-       WHERE f.userid = $1 and f.updated_at > $2
+       WHERE f.userid = $1 AND f.deleted = false AND f.updated_at > $2
        ORDER BY s.spacename ASC`,
       [req.user.id, req.since]
     );
-    console.log("sending: " , rows, " since: " , req.since);
     res.json({ spaces: rows });
   } catch (err) {
-    console.log("error message: " , err.message)
     res.status(500).json({ error: err.message });
   }
 });
@@ -113,7 +110,7 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
       await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
 
       const { rows } = await client.query(
-        `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
+        `SELECT role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
         [spaceId, req.user.id]
       );
       if (!rows.length) throw new HttpError(404, 'You are not a member of this space');
@@ -134,7 +131,7 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
         });
       }
 
-      await client.query(`DELETE FROM following WHERE spaceid = $1 AND userid = $2`, [spaceId, req.user.id]);
+      await client.query(`UPDATE following SET deleted = true WHERE spaceid = $1 AND userid = $2`, [spaceId, req.user.id]);
       return { message: 'Left space' };
     });
     res.json(result);

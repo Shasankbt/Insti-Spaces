@@ -152,7 +152,8 @@ const listNotifications = async ({ userId, limit = 50, since = new Date(0) }) =>
          u_to.username           AS to_username,
          NULL::int               AS space_id,
          NULL::text              AS spacename,
-         NULL::text              AS requested_role
+         NULL::text              AS requested_role,
+         false::boolean          AS deleted
        FROM friend_requests fr
        JOIN users u_from ON u_from.id = fr.from_user_id
        JOIN users u_to   ON u_to.id   = fr.to_user_id
@@ -175,14 +176,18 @@ const listNotifications = async ({ userId, limit = 50, since = new Date(0) }) =>
          NULL::text              AS to_username,
          rr.space_id,
          s.spacename,
-         rr.role                 AS requested_role
+         rr.role                 AS requested_role,
+         rr.deleted
        FROM role_requests rr
        JOIN users  u_req ON u_req.id = rr.user_id
        JOIN spaces s     ON s.id     = rr.space_id
        JOIN following f  ON f.spaceid = rr.space_id AND f.userid = ($1::int) AND f.role = 'admin'
-       WHERE rr.status = 'pending'
-         AND (rr.expires_at IS NULL OR rr.expires_at > NOW())
+       WHERE (rr.expires_at IS NULL OR rr.expires_at > NOW())
          AND rr.updated_at > $3
+         AND (
+           (rr.status = 'pending' AND rr.deleted = false)
+           OR rr.deleted = true
+         )
      ) n
      ORDER BY n.created_at DESC
      LIMIT $2`,

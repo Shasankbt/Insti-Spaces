@@ -92,6 +92,12 @@ router.post('/changeRole', authenticate, async (req, res) => {
       const updated = await changeUserRole({ spaceId, userId: found.id, role: cleanRole }, client);
       if (!updated) throw new HttpError(500, 'Failed to update role');
 
+      await client.query(
+        `UPDATE role_requests SET deleted = true
+         WHERE user_id = $1 AND space_id = $2 AND status = 'pending' AND deleted = false`,
+        [found.id, spaceId]
+      );
+
       return { userid: updated.userid, username: found.username, role: updated.role };
     });
 
@@ -181,7 +187,7 @@ router.post('/roleRequests/:requestId/accept', authenticate, async (req, res) =>
       if (!updatedMember) throw new HttpError(404, 'User is not a member of this space');
 
       const { rows } = await client.query(
-        `UPDATE role_requests SET status = 'accepted'
+        `UPDATE role_requests SET status = 'accepted', deleted = true
          WHERE id = $1
          RETURNING id, user_id, space_id, role, status, created_at, expires_at`,
         [requestId]
@@ -207,7 +213,7 @@ router.post('/roleRequests/:requestId/reject', authenticate, async (req, res) =>
       const rr = await resolveRoleRequest(client, spaceId, requestId, req.user.id);
 
       const { rows } = await client.query(
-        `UPDATE role_requests SET status = 'rejected'
+        `UPDATE role_requests SET status = 'rejected', deleted = true
          WHERE id = $1
          RETURNING id, user_id, space_id, role, status, created_at, expires_at`,
         [rr.id]

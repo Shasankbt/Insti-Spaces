@@ -1,5 +1,20 @@
 const { pool } = require('../db');
 
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
 
 class HttpError extends Error {
@@ -16,21 +31,6 @@ class HttpError extends Error {
 function parseSpaceId(req) {
   const id = Number(req.params.spaceId);
   return Number.isFinite(id) ? id : null;
-}
-
-async function withTransaction(fn) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 // Throws HttpError if caller is not an admin of spaceId. Must be called inside a transaction.

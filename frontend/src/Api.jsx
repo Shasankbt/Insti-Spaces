@@ -17,8 +17,11 @@ export const searchUsers = ({ prefix, token }) =>
     ...authHeaders(token),
   });
 
-export const getNotifications = ({ token }) =>
-  axios.get(`${API}/user/notifications`, authHeaders(token));
+export const getNotifications = ({ token, since }) =>
+  axios.get(`${API}/user/notifications`, {
+    params: since ? { since } : {},
+    ...authHeaders(token),
+  });
 
 export const acceptFriendRequest = ({ requestId, token }) =>
   axios.post(
@@ -40,8 +43,11 @@ export const getFriends = ({ token }) =>
 export const createSpace = ({ spacename, token }) =>
   axios.post(`${API}/spaces/create`, { spacename }, authHeaders(token));
 
-export const getFollowingSpaces = ({ token }) =>
-  axios.get(`${API}/spaces`, authHeaders(token));
+export const getFollowingSpaces = ({ token, since }) =>
+  axios.get(`${API}/spaces`, {
+    params: since ? { since } : {},
+    ...authHeaders(token),
+  });
 
 export const inviteToSpace = ({ spaceId, username, token }) =>
   axios.post(

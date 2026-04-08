@@ -24,13 +24,9 @@ export default function SpaceView() {
     roleUpdateError,
     handleRoleChange,
     fetchMembers,
-  } = useSpaceView({ id, token });
+  } = useSpaceView({ id, token, userId: user?.id });
 
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [contributeOpen, setContributeOpen] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
-  const [requestRoleOpen, setRequestRoleOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [openModal, setOpenModal] = useState(null);
 
   useEffect(() => {
     if (loading) return;
@@ -56,20 +52,20 @@ export default function SpaceView() {
 
       <div>
         {space.role === "admin" && (
-          <button onClick={() => setInviteOpen(true)}>Invite</button>
+          <button onClick={() => setOpenModal("invite")}>Invite</button>
         )}
         {["admin", "moderator", "contributor"].includes(space.role) && (
-          <button onClick={() => setContributeOpen(true)}>Contribute</button>
+          <button onClick={() => setOpenModal("contribute")}>Contribute</button>
         )}
         {space.role !== "admin" && (
-          <button onClick={() => setRequestRoleOpen(true)}>
+          <button onClick={() => setOpenModal("requestRole")}>
             Request role upgrade
           </button>
         )}
         {space.role === "admin" && (
-          <button onClick={() => setDeleteOpen(true)}>Delete Space</button>
+          <button onClick={() => setOpenModal("delete")}>Delete Space</button>
         )}
-        <button onClick={() => setLeaveOpen(true)}>Leave</button>
+        <button onClick={() => setOpenModal("leave")}>Leave</button>
       </div>
 
       <MembersList
@@ -82,44 +78,44 @@ export default function SpaceView() {
         roleUpdateError={roleUpdateError}
       />
 
-      {inviteOpen && (
+      {openModal === "invite" && (
         <InviteModal
           space={space}
           token={token}
           onInviteSuccess={() => fetchMembers()}
-          onClose={() =>  setInviteOpen(false)}
+          onClose={() => setOpenModal(null)}
         />
       )}
-      {contributeOpen && (
+      {openModal === "contribute" && (
         <ContributeModal
           space={space}
           token={token}
-          onClose={() =>  setContributeOpen(false)}
+          onClose={() => setOpenModal(null)}
         />
       )}
-      {leaveOpen && (
+      {openModal === "leave" && (
         <LeaveModal
           space={space}
           token={token}
           members={members}
           currentUserId={user?.id}
           onLeave={() => navigate("/spaces")}
-          onClose={() =>  setLeaveOpen(false)}
+          onClose={() => setOpenModal(null)}
         />
       )}
-      {requestRoleOpen && (
+      {openModal === "requestRole" && (
         <RequestRoleModal
           space={space}
           token={token}
-          onClose={() =>  setRequestRoleOpen(false)}
+          onClose={() => setOpenModal(null)}
         />
       )}
-      {deleteOpen && (
+      {openModal === "delete" && (
         <DeleteSpaceModal
           space={space}
           token={token}
           onDeleted={() => navigate("/spaces")}
-          onClose={() =>  setDeleteOpen(false)}
+          onClose={() => setOpenModal(null)}
         />
       )}
     </div>

@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import useRequireAuth from "../hooks/useRequireAuth";
 import { getFollowingSpaces, createSpace } from "../Api";
+import { POLL_INTERVAL } from "../constants";
 
 export default function Spaces() {
   const { user, token, loading, isAuthenticated } = useRequireAuth();
@@ -10,28 +11,45 @@ export default function Spaces() {
   const [spaces, setSpaces] = useState([]);
   const [spacesLoading, setSpacesLoading] = useState(false);
   const [spacesError, setSpacesError] = useState(null);
+  const spacesSinceRef = useRef(null);
 
   const [spacename, setSpacename] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(null);
 
-  const loadSpaces = useCallback(async () => {
-    setSpacesError(null);
+  const loadSpaces = useCallback(async (since = null) => {
+    const fetchedAt = new Date().toISOString();
+    if (!since) { setSpacesError(null); setSpacesLoading(true); }
     try {
-      setSpacesLoading(true);
-      const res = await getFollowingSpaces({ token });
-      setSpaces(res.data.spaces || []);
+      const res = await getFollowingSpaces({ token, since });
+      const delta = res.data.spaces || [];
+      if (!since) {
+        setSpaces(delta);
+      } else {
+        setSpaces((prev) => {
+          const map = new Map(prev.map((s) => [s.id, s]));
+          for (const s of delta) map.set(s.id, s);
+          return Array.from(map.values()).sort((a, b) =>
+            a.spacename.localeCompare(b.spacename)
+          );
+        });
+      }
+      spacesSinceRef.current = fetchedAt;
     } catch (err) {
-      setSpacesError(err.response?.data?.error || "Failed to load spaces");
+      if (!since) setSpacesError(err.response?.data?.error || "Failed to load spaces");
     } finally {
-      setSpacesLoading(false);
+      if (!since) setSpacesLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    if (activeTab === "my-spaces") loadSpaces();
-  }, [activeTab, loadSpaces]);
+    if (!user || !token || activeTab !== "my-spaces") return;
+    spacesSinceRef.current = null;
+    loadSpaces();
+    const interval = setInterval(() => loadSpaces(spacesSinceRef.current), POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [activeTab, user, token, loadSpaces]);
 
   const handleCreate = async (e) => {
     e.preventDefault();

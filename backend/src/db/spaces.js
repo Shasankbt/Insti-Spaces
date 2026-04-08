@@ -2,7 +2,7 @@ const pool = require('./pool');
 
 const getUserInSpace = async ({ spaceId, userId }) => {
   const { rows } = await pool.query(
-    `SELECT userid, spaceid, role FROM following WHERE spaceid = $1 AND userid = $2`,
+    `SELECT userid, spaceid, role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
     [spaceId, userId]
   );
   return rows[0] || null;
@@ -12,7 +12,9 @@ const addUserToSpace = async ({ spaceId, userId, role = 'viewer' }) => {
   const { rows } = await pool.query(
     `INSERT INTO following (userid, spaceid, role)
      VALUES ($1, $2, $3)
-     ON CONFLICT (userid, spaceid) DO NOTHING
+     ON CONFLICT (userid, spaceid) DO UPDATE
+       SET deleted = false, role = EXCLUDED.role
+       WHERE following.deleted = true
      RETURNING userid, spaceid, role`,
     [userId, spaceId, role]
   );
@@ -43,7 +45,7 @@ const getSpaceAdminCount = async (spaceId, client = pool) => {
   if (!Number.isFinite(cleanSpaceId)) return 0;
 
   const { rows } = await client.query(
-    `SELECT COUNT(*)::int AS count FROM following WHERE spaceid = $1 AND role = 'admin'`,
+    `SELECT COUNT(*)::int AS count FROM following WHERE spaceid = $1 AND role = 'admin' AND deleted = false`,
     [cleanSpaceId]
   );
   return rows[0]?.count ?? 0;
@@ -54,7 +56,7 @@ const getSpaceMemberCount = async (spaceId, client = pool) => {
   if (!Number.isFinite(cleanSpaceId)) return 0;
 
   const { rows } = await client.query(
-    `SELECT COUNT(*)::int AS count FROM following WHERE spaceid = $1`,
+    `SELECT COUNT(*)::int AS count FROM following WHERE spaceid = $1 AND deleted = false`,
     [cleanSpaceId]
   );
   return rows[0]?.count ?? 0;
@@ -87,6 +89,7 @@ const getPendingRoleRequest = async ({ userId, spaceId }, client = pool) => {
      WHERE user_id = $1
        AND space_id = $2
        AND status = 'pending'
+       AND deleted = false
        AND (expires_at IS NULL OR expires_at > NOW())
      ORDER BY created_at DESC
      LIMIT 1`,
@@ -107,14 +110,13 @@ const createRoleRequest = async ({ userId, spaceId, role }, client = pool) => {
   }
 
   try {
-    // Free up a slot if the only pending request is already expired.
+    // Free the unique index slot for: (1) expired requests, (2) cancelled (soft-deleted) requests.
     await client.query(
       `UPDATE role_requests SET status = 'rejected'
        WHERE user_id = $1
          AND space_id = $2
          AND status = 'pending'
-         AND expires_at IS NOT NULL
-         AND expires_at < NOW()`,
+         AND (deleted = true OR (expires_at IS NOT NULL AND expires_at < NOW()))`,
       [cleanUserId, cleanSpaceId]
     );
 
@@ -142,8 +144,8 @@ const deleteRoleRequest = async ({ userId, spaceId }, client = pool) => {
   if (!Number.isFinite(cleanUserId) || !Number.isFinite(cleanSpaceId)) return 0;
 
   const { rowCount } = await client.query(
-    `DELETE FROM role_requests
-     WHERE user_id = $1 AND space_id = $2 AND status = 'pending'`,
+    `UPDATE role_requests SET deleted = true
+     WHERE user_id = $1 AND space_id = $2 AND status = 'pending' AND deleted = false`,
     [cleanUserId, cleanSpaceId]
   );
   return rowCount;
