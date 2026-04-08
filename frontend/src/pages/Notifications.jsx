@@ -1,12 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import useRequireAuth from "../hooks/useRequireAuth";
-import {
-  acceptFriendRequest,
-  acceptRoleRequest,
-  getNotifications,
-  rejectRoleRequest,
-} from "../Api";
-import { POLL_INTERVAL } from "../constants";
+import { acceptFriendRequest, acceptRoleRequest, rejectRoleRequest } from "../Api";
+import { useDeltaSync } from "../hooks/useDeltaSync";
+import { useState } from "react";
 
 export default function Notifications() {
   const {
@@ -16,83 +11,56 @@ export default function Notifications() {
     isAuthenticated,
   } = useRequireAuth();
 
-  const [items, setItems] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: items,
+    loading,
+    error,
+    refresh,
+  } = useDeltaSync("http://localhost:3000/user/notifications", {
+    token,
+    interval: 20_000,
+    pause: !isAuthenticated,
+    idKey: 'uid',
+  });
+
   const [acceptingId, setAcceptingId] = useState(null);
   const [actingId, setActingId] = useState(null);
-  const sinceRef = useRef(null);
-
-  const load = async (since = null) => {
-    const fetchedAt = new Date().toISOString();
-    if (!since) { setError(null); setLoading(true); }
-    try {
-      const res = await getNotifications({ token, since });
-      const delta = res.data.items || [];
-      if (!since) {
-        setItems(delta.filter((n) => !n.deleted));
-      } else {
-        setItems((prev) => {
-          const map = new Map(prev.map((n) => [n.uid, n]));
-          for (const n of delta) {
-            if (n.deleted) map.delete(n.uid);
-            else map.set(n.uid, n);
-          }
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.created_at) - new Date(a.created_at)
-          );
-        });
-      }
-      sinceRef.current = fetchedAt;
-    } catch (err) {
-      if (!since) setError(err.response?.data?.error || "Failed to load notifications");
-    } finally {
-      if (!since) setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!user || !token) return;
-    sinceRef.current = null;
-    load();
-    const interval = setInterval(() => load(sinceRef.current), POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [user, token]);
+  const [actionError, setActionError] = useState(null);
 
   const onAccept = async (requestId) => {
-    setError(null);
+    setActionError(null);
     try {
       setAcceptingId(requestId);
       await acceptFriendRequest({ requestId, token });
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to accept request");
+      setActionError(err.response?.data?.error || "Failed to accept request");
     } finally {
       setAcceptingId(null);
     }
   };
 
   const onAcceptRole = async ({ spaceId, requestId }) => {
-    setError(null);
+    setActionError(null);
     try {
       setActingId(`role_accept:${requestId}`);
       await acceptRoleRequest({ spaceId, requestId, token });
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to accept role request");
+      setActionError(err.response?.data?.error || "Failed to accept role request");
     } finally {
       setActingId(null);
     }
   };
 
   const onRejectRole = async ({ spaceId, requestId }) => {
-    setError(null);
+    setActionError(null);
     try {
       setActingId(`role_reject:${requestId}`);
       await rejectRoleRequest({ spaceId, requestId, token });
-      await load();
+      await refresh();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to reject role request");
+      setActionError(err.response?.data?.error || "Failed to reject role request");
     } finally {
       setActingId(null);
     }
@@ -105,7 +73,9 @@ export default function Notifications() {
     <div style={{ padding: 16, textAlign: "left" }}>
       <h2>Notifications</h2>
 
-      {error && <p style={{ color: "red", marginTop: 12 }}>{error}</p>}
+      {(error || actionError) && (
+        <p style={{ color: "red", marginTop: 12 }}>{error || actionError}</p>
+      )}
 
       {loading ? <p style={{ marginTop: 12 }}>Loading…</p> : null}
 
@@ -125,7 +95,7 @@ export default function Notifications() {
           if (n.type === "role_request") {
             return (
               <div
-                key={`${n.type}:${n.id}`}
+                key={n.uid}
                 style={{
                   border: "1px solid var(--border)",
                   borderRadius: 8,
@@ -150,9 +120,7 @@ export default function Notifications() {
                     }
                     disabled={actingId === `role_accept:${n.id}`}
                   >
-                    {actingId === `role_accept:${n.id}`
-                      ? "Accepting…"
-                      : "Accept"}
+                    {actingId === `role_accept:${n.id}` ? "Accepting…" : "Accept"}
                   </button>
                   <button
                     onClick={() =>
@@ -160,16 +128,14 @@ export default function Notifications() {
                     }
                     disabled={actingId === `role_reject:${n.id}`}
                   >
-                    {actingId === `role_reject:${n.id}`
-                      ? "Rejecting…"
-                      : "Reject"}
+                    {actingId === `role_reject:${n.id}` ? "Rejecting…" : "Reject"}
                   </button>
                 </div>
               </div>
             );
           }
 
-          // default: friend_request
+          // friend_request
           const isPendingIncoming =
             n.status === "pending" && n.to_user_id === user.id;
           const otherUsername =
@@ -177,7 +143,7 @@ export default function Notifications() {
 
           return (
             <div
-              key={`${n.type}:${n.id}`}
+              key={n.uid}
               style={{
                 border: "1px solid var(--border)",
                 borderRadius: 8,
@@ -190,7 +156,7 @@ export default function Notifications() {
             >
               <div>
                 {n.status === "accepted" ? (
-                  <p>{otherUsername} and you both are friends</p>
+                  <p>{otherUsername} and you are now friends</p>
                 ) : (
                   <p>{n.from_username} sent you a friend request</p>
                 )}

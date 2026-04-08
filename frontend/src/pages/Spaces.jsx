@@ -1,76 +1,52 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import useRequireAuth from "../hooks/useRequireAuth";
-import { getFollowingSpaces, createSpace } from "../Api";
-import { POLL_INTERVAL } from "../constants";
+import { createSpace } from "../Api";
+import { useDeltaSync } from "../hooks/useDeltaSync";
 
 export default function Spaces() {
-  const { user, token, loading, isAuthenticated } = useRequireAuth();
+  const { token, loading, isAuthenticated } = useRequireAuth();
 
   const [activeTab, setActiveTab] = useState("my-spaces");
-  const [spaces, setSpaces] = useState([]);
-  const [spacesLoading, setSpacesLoading] = useState(false);
-  const [spacesError, setSpacesError] = useState(null);
-  const spacesSinceRef = useRef(null);
-
   const [spacename, setSpacename] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(null);
 
-  const loadSpaces = useCallback(async (since = null) => {
-    const fetchedAt = new Date().toISOString();
-    if (!since) { setSpacesError(null); setSpacesLoading(true); }
-    try {
-      const res = await getFollowingSpaces({ token, since });
-      const delta = res.data.spaces || [];
-      if (!since) {
-        setSpaces(delta);
-      } else {
-        setSpaces((prev) => {
-          const map = new Map(prev.map((s) => [s.id, s]));
-          for (const s of delta) map.set(s.id, s);
-          return Array.from(map.values()).sort((a, b) =>
-            a.spacename.localeCompare(b.spacename)
-          );
-        });
+  const {
+    data: spaces,
+    loading: spacesLoading,
+    error: spacesError,
+    sync,
+  } = useDeltaSync("http://localhost:3000/spaces", {
+    token,
+    interval: 20_000,
+    pause: !isAuthenticated || activeTab !== "my-spaces",
+  });
+
+  const handleCreate = useCallback(
+    async (e) => {
+      e.preventDefault();
+      setCreateError(null);
+      setCreateSuccess(null);
+      const clean = spacename.trim();
+      if (!clean) return;
+      try {
+        setCreating(true);
+        const res = await createSpace({ spacename: clean, token });
+        setCreateSuccess(
+          `Space "${res.data.space?.spacename ?? clean}" created!`
+        );
+        setSpacename("");
+        sync(); // immediate delta pull instead of full reload
+      } catch (err) {
+        setCreateError(err.response?.data?.error || "Failed to create space");
+      } finally {
+        setCreating(false);
       }
-      spacesSinceRef.current = fetchedAt;
-    } catch (err) {
-      if (!since) setSpacesError(err.response?.data?.error || "Failed to load spaces");
-    } finally {
-      if (!since) setSpacesLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (!user || !token || activeTab !== "my-spaces") return;
-    spacesSinceRef.current = null;
-    loadSpaces();
-    const interval = setInterval(() => loadSpaces(spacesSinceRef.current), POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [activeTab, user, token, loadSpaces]);
-
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setCreateError(null);
-    setCreateSuccess(null);
-    const clean = spacename.trim();
-    if (!clean) return;
-    try {
-      setCreating(true);
-      const res = await createSpace({ spacename: clean, token });
-      setCreateSuccess(
-        `Space "${res.data.space?.spacename ?? clean}" created!`,
-      );
-      setSpacename("");
-      loadSpaces();
-    } catch (err) {
-      setCreateError(err.response?.data?.error || "Failed to create space");
-    } finally {
-      setCreating(false);
-    }
-  };
+    },
+    [spacename, token, sync]
+  );
 
   if (loading) return <p className="spaces__empty">Loading…</p>;
   if (!isAuthenticated) return null;
@@ -111,18 +87,20 @@ export default function Spaces() {
 
           {spaces.length > 0 && (
             <div className="spaces__list">
-              {spaces.map((s) => (
-                <div key={s.id} className="spaces__card">
-                  <div>
-                    <div className="spaces__card-name">{s.spacename}</div>
-                    <div className="spaces__card-role">{s.role}</div>
+              {spaces
+                .slice()
+                .sort((a, b) => a.spacename.localeCompare(b.spacename))
+                .map((s) => (
+                  <div key={s.id} className="spaces__card">
+                    <div>
+                      <div className="spaces__card-name">{s.spacename}</div>
+                      <div className="spaces__card-role">{s.role}</div>
+                    </div>
+                    <Link to={`/spaces/${s.id}`} className="spaces__action-btn">
+                      Open
+                    </Link>
                   </div>
-                  {/* just navigate into the space */}
-                  <Link to={`/spaces/${s.id}`} className="spaces__action-btn">
-                    Open
-                  </Link>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
