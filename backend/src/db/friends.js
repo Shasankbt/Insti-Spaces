@@ -131,7 +131,7 @@ const listFriends = async ({ userId, limit = 200 }) => {
   return rows;
 };
 
-const listNotifications = async ({ userId, limit = 50 }) => {
+const listNotifications = async ({ userId, limit = 50, since = new Date(0) }) => {
   const cleanUserId = Number.parseInt(String(userId), 10);
   const cleanLimit = Number.parseInt(String(limit), 10);
   const finalLimit = Number.isInteger(cleanLimit) && cleanLimit > 0 ? Math.min(cleanLimit, 200) : 50;
@@ -141,6 +141,7 @@ const listNotifications = async ({ userId, limit = 50 }) => {
      FROM (
        SELECT
          fr.id,
+         ('friend_request:' || fr.id::text) AS uid,
          'friend_request'::text  AS type,
          fr.from_user_id,
          fr.to_user_id,
@@ -155,18 +156,20 @@ const listNotifications = async ({ userId, limit = 50 }) => {
        FROM friend_requests fr
        JOIN users u_from ON u_from.id = fr.from_user_id
        JOIN users u_to   ON u_to.id   = fr.to_user_id
-       WHERE (fr.to_user_id = ($1::int) AND fr.status = 'pending')
-          OR ((fr.to_user_id = ($1::int) OR fr.from_user_id = ($1::int)) AND fr.status = 'accepted')
+       WHERE ((fr.to_user_id = ($1::int) AND fr.status = 'pending')
+          OR ((fr.to_user_id = ($1::int) OR fr.from_user_id = ($1::int)) AND fr.status = 'accepted'))
+         AND COALESCE(fr.responded_at, fr.created_at) > $3
 
        UNION ALL
 
        SELECT
          rr.id,
+         ('role_request:' || rr.id::text) AS uid,
          'role_request'::text    AS type,
          rr.user_id              AS from_user_id,
          NULL::int               AS to_user_id,
          rr.status,
-         rr.created_at,
+         rr.updated_at           AS created_at,
          NULL::timestamptz       AS responded_at,
          u_req.username          AS from_username,
          NULL::text              AS to_username,
@@ -179,10 +182,11 @@ const listNotifications = async ({ userId, limit = 50 }) => {
        JOIN following f  ON f.spaceid = rr.space_id AND f.userid = ($1::int) AND f.role = 'admin'
        WHERE rr.status = 'pending'
          AND (rr.expires_at IS NULL OR rr.expires_at > NOW())
+         AND rr.updated_at > $3
      ) n
      ORDER BY n.created_at DESC
      LIMIT $2`,
-    [cleanUserId, finalLimit]
+    [cleanUserId, finalLimit, since]
   );
   return rows;
 };

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs/promises');
-const { authenticate } = require('../middleware');
+const { authenticate, deltaSync } = require('../middleware');
 const {
   pool,
   getUserInSpace,
@@ -25,18 +25,21 @@ router.use('/:spaceId', require('./spaceContent'));
 // ── space lifecycle ───────────────────────────────────────────────────────────
 
 // GET /spaces — list spaces the authenticated user follows
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, deltaSync, async (req, res) => {
+  // console.log("getting spaces");
   try {
     const { rows } = await pool.query(
-      `SELECT s.id, s.spacename, f.role
+      `SELECT s.id, s.spacename, f.role, f.deleted, f.updated_at
        FROM following f
        JOIN spaces s ON s.id = f.spaceid
-       WHERE f.userid = $1
+       WHERE f.userid = $1 and f.updated_at > $2
        ORDER BY s.spacename ASC`,
-      [req.user.id]
+      [req.user.id, req.since]
     );
+    console.log("sending: " , rows, " since: " , req.since);
     res.json({ spaces: rows });
   } catch (err) {
+    console.log("error message: " , err.message)
     res.status(500).json({ error: err.message });
   }
 });

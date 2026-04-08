@@ -38,13 +38,17 @@ ON friend_requests (from_user_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS spaces (
   id SERIAL PRIMARY KEY,
   spacename VARCHAR(50) UNIQUE NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS following (
   userid INTEGER NOT NULL REFERENCES users(id),
   spaceid INTEGER NOT NULL REFERENCES spaces(id),
   role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE,
   PRIMARY KEY (userid, spaceid),
   CONSTRAINT role_check CHECK (role IN ('viewer', 'moderator', 'contributor', 'admin'))
 );
@@ -66,7 +70,9 @@ CREATE TABLE IF NOT EXISTS space_posts (
   spaceid INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
   userid INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   photo_url TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS role_requests (
@@ -76,6 +82,8 @@ CREATE TABLE IF NOT EXISTS role_requests (
   role       VARCHAR(20) NOT NULL,
   status     VARCHAR(10) NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted BOOLEAN DEFAULT FALSE,
   expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
 
   CONSTRAINT role_requests_status_check CHECK (status IN ('pending', 'accepted', 'rejected')),
@@ -88,3 +96,28 @@ ON role_requests (user_id, space_id)
 WHERE status = 'pending';
 
 CREATE INDEX IF NOT EXISTS idx_space_posts_spaceid ON space_posts (spaceid);
+
+-- auto-update updated_at on row changes
+CREATE OR REPLACE FUNCTION touch_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER spaces_updated_at
+BEFORE UPDATE ON spaces
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TRIGGER following_updated_at
+BEFORE UPDATE ON following
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TRIGGER space_posts_updated_at
+BEFORE UPDATE ON space_posts
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TRIGGER role_requests_updated_at
+BEFORE UPDATE ON role_requests
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

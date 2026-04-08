@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { authenticate } = require('../middleware');
+const { authenticate, deltaSync } = require('../middleware');
 
 const {
   searchUsers,
@@ -7,9 +7,9 @@ const {
 } = require('../db');
 
 // display of friend requests , role requests
-router.get('/notifications', authenticate, async (req, res) => {
+router.get('/notifications', authenticate, deltaSync, async (req, res) => {
   try {
-    const items = await listNotifications({ userId: req.user.id, limit: 50 });
+    const items = await listNotifications({ userId: req.user.id, limit: 50, since: req.since });
     res.json({ items });
   } catch (err) {
     console.error(err);

@@ -31,7 +31,24 @@ const isMember = async (req, res, next) => {
   next()
 }
 
+const deltaSync = async (req, res, next) => {
+  console.log("req.query.since: " , req.query.since)
+  const since = req.query.since
+
+  const sinceDate = since ? new Date(since) : new Date(0)  // epoch if not given
+
+  if (isNaN(sinceDate)) {
+    return res.status(400).json({ error: 'Invalid since timestamp' })
+  }
+
+  req.since = new Date(sinceDate.getTime() + 1)
+  next()
+}
+
+module.exports = deltaSync
+
 module.exports = {
   authenticate,
-  isMember
+  isMember,
+  deltaSync
 };

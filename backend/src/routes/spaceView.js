@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true });
-const { authenticate, isMember } = require('../middleware');
+const { authenticate, isMember, deltaSync } = require('../middleware');
 const { getSpaceById, getSpaceMembers } = require('../db');
 const { parseSpaceId } = require('./spacesHelpers');
 
@@ -16,10 +16,10 @@ router.get('/', authenticate, isMember, async (req, res) => {
 });
 
 // GET /spaces/:spaceId/members — list members of a space
-router.get('/members', authenticate, isMember, async (req, res) => {
+router.get('/members', authenticate, isMember, deltaSync, async (req, res) => {
   try {
     const spaceId = parseSpaceId(req);
-    const members = await getSpaceMembers(spaceId);
+    const members = await getSpaceMembers(spaceId, req.since);
     res.json({ members });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -27,13 +27,13 @@ const getSpaceById = async ({ spaceId }) => {
   return rows[0] || null;
 };
 
-const getSpaceMembers = async (spaceId) => {
+const getSpaceMembers = async (spaceId, since = new Date(0)) => {
   const { rows } = await pool.query(
-    `SELECT u.id AS userid, u.username, f.role
+    `SELECT u.id AS id, u.id AS userid, u.username, f.role, f.deleted, f.updated_at
      FROM following f
      JOIN users u ON u.id = f.userid
-     WHERE f.spaceid = $1`,
-    [spaceId]
+     WHERE f.spaceid = $1 AND f.updated_at > $2`,
+    [spaceId, since]
   );
   return rows;
 };
