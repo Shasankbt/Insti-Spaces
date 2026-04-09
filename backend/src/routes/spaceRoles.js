@@ -75,19 +75,20 @@ router.post('/changeRole', authenticate, async (req, res) => {
 
       const targetCurrentRole = targetRows[0].role;
       const isSelf = found.id === req.user.id;
-      const isOwner = ownerUserId === found.id;
+      const isTargetOwner = ownerUserId === found.id;
+      const isActorOwner = ownerUserId === req.user.id;
 
-      if (isOwner && cleanRole !== 'admin') {
+      if (isTargetOwner && cleanRole !== 'admin') {
         throw new HttpError(403, {
           error: 'cannot_change_owner_role',
           message: 'The main admin role cannot be changed.',
         });
       }
 
-      if (targetCurrentRole === 'admin' && !isSelf && !isOwner && cleanRole !== 'admin') {
+      if (targetCurrentRole === 'admin' && !isSelf && !isTargetOwner && !isActorOwner && cleanRole !== 'admin') {
         throw new HttpError(403, {
           error: 'cannot_demote_other_admin',
-          message: 'Only the main admin is protected from role changes.',
+          message: 'Only the main admin can change another admin role.',
         });
       }
 
