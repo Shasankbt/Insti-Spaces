@@ -32,11 +32,11 @@ INSERT INTO friend_requests (from_user_id, to_user_id, status, responded_at) VAL
 -- =====================
 -- SPACES
 -- =====================
-INSERT INTO spaces (spacename) VALUES
-  ('photography'),
-  ('travel-diaries'),
-  ('foodies'),
-  ('tech-talk');
+INSERT INTO spaces (spacename, owner_user_id) VALUES
+  ('photography', 1),
+  ('travel-diaries', 4),
+  ('foodies', 2),
+  ('tech-talk', 1);
 
 
 -- =====================

@@ -49,10 +49,13 @@ export const getFollowingSpaces = ({ token, since }) =>
     ...authHeaders(token),
   });
 
-export const inviteToSpace = ({ spaceId, username, token }) =>
+export const inviteToSpace = ({ spaceId, userId, username, token }) =>
   axios.post(
     `${API}/spaces/${spaceId}/invite`,
-    { username },
+    {
+      ...(userId ? { userId } : {}),
+      ...(username ? { username } : {}),
+    },
     authHeaders(token),
   );
 
@@ -75,6 +78,16 @@ export const changeRoleInSpace = ({ spaceId, username, role, token }) =>
   axios.post(
     `${API}/spaces/${spaceId}/changeRole`,
     { username, role },
+    authHeaders(token),
+  );
+
+export const removeMemberFromSpace = ({ spaceId, userId, token }) =>
+  axios.delete(`${API}/spaces/${spaceId}/members/${userId}`, authHeaders(token));
+
+export const transferSpaceOwnership = ({ spaceId, userId, token }) =>
+  axios.post(
+    `${API}/spaces/${spaceId}/transferOwnership`,
+    { userId },
     authHeaders(token),
   );
 

@@ -23,7 +23,7 @@ const addUserToSpace = async ({ spaceId, userId, role = 'viewer' }) => {
 
 const getSpaceById = async ({ spaceId }) => {
   const { rows } = await pool.query(
-    `SELECT id, spacename, created_at FROM spaces WHERE id = $1`,
+    `SELECT id, spacename, owner_user_id, created_at FROM spaces WHERE id = $1`,
     [spaceId]
   );
   return rows[0] || null;
@@ -31,13 +31,26 @@ const getSpaceById = async ({ spaceId }) => {
 
 const getSpaceMembers = async (spaceId, since = new Date(0)) => {
   const { rows } = await pool.query(
-    `SELECT u.id AS id, u.id AS userid, u.username, f.role, f.deleted, f.updated_at
+    `SELECT u.id AS id, u.id AS userid, u.username, f.role, f.deleted, f.updated_at,
+            (s.owner_user_id = u.id) AS is_owner
      FROM following f
      JOIN users u ON u.id = f.userid
+     JOIN spaces s ON s.id = f.spaceid
      WHERE f.spaceid = $1 AND f.updated_at > $2`,
     [spaceId, since]
   );
   return rows;
+};
+
+const getSpaceOwnerUserId = async (spaceId, client = pool) => {
+  const cleanSpaceId = Number(spaceId);
+  if (!Number.isFinite(cleanSpaceId)) return null;
+
+  const { rows } = await client.query(
+    `SELECT owner_user_id FROM spaces WHERE id = $1`,
+    [cleanSpaceId]
+  );
+  return rows[0]?.owner_user_id ?? null;
 };
 
 const getSpaceAdminCount = async (spaceId, client = pool) => {
@@ -74,6 +87,36 @@ const changeUserRole = async ({ spaceId, userId, role }, client = pool) => {
      WHERE userid = $2 AND spaceid = $3
      RETURNING userid, spaceid, role`,
     [cleanRole, cleanUserId, cleanSpaceId]
+  );
+  return rows[0] || null;
+};
+
+const removeUserFromSpace = async ({ spaceId, userId }, client = pool) => {
+  const cleanSpaceId = Number(spaceId);
+  const cleanUserId = Number(userId);
+  if (!Number.isFinite(cleanSpaceId) || !Number.isFinite(cleanUserId)) return null;
+
+  const { rows } = await client.query(
+    `UPDATE following
+     SET deleted = true
+     WHERE userid = $1 AND spaceid = $2 AND deleted = false
+     RETURNING userid, spaceid, role`,
+    [cleanUserId, cleanSpaceId]
+  );
+  return rows[0] || null;
+};
+
+const transferSpaceOwnership = async ({ spaceId, newOwnerUserId }, client = pool) => {
+  const cleanSpaceId = Number(spaceId);
+  const cleanNewOwnerUserId = Number(newOwnerUserId);
+  if (!Number.isFinite(cleanSpaceId) || !Number.isFinite(cleanNewOwnerUserId)) return null;
+
+  const { rows } = await client.query(
+    `UPDATE spaces
+     SET owner_user_id = $1
+     WHERE id = $2
+     RETURNING id, spacename, owner_user_id, created_at`,
+    [cleanNewOwnerUserId, cleanSpaceId]
   );
   return rows[0] || null;
 };
@@ -156,9 +199,12 @@ module.exports = {
   addUserToSpace,
   getSpaceById,
   getSpaceMembers,
+  getSpaceOwnerUserId,
   getSpaceAdminCount,
   getSpaceMemberCount,
   changeUserRole,
+  removeUserFromSpace,
+  transferSpaceOwnership,
   getPendingRoleRequest,
   createRoleRequest,
   deleteRoleRequest,

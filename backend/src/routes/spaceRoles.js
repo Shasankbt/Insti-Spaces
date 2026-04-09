@@ -4,11 +4,13 @@ const { authenticate } = require('../middleware');
 const {
   getUserInSpace,
   findUserByUsername,
+  getSpaceOwnerUserId,
   getSpaceAdminCount,
   changeUserRole,
   getPendingRoleRequest,
   createRoleRequest,
   deleteRoleRequest,
+  transferSpaceOwnership,
 } = require('../db');
 const {
   roleRank,
@@ -16,6 +18,7 @@ const {
   parseSpaceId,
   withTransaction,
   requireSpaceAdmin,
+  requireSpaceOwner,
   handleError,
 } = require('./spacesHelpers');
 
@@ -62,6 +65,7 @@ router.post('/changeRole', authenticate, async (req, res) => {
       await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
 
       await requireSpaceAdmin(client, spaceId, req.user.id);
+      const ownerUserId = await getSpaceOwnerUserId(spaceId, client);
 
       const { rows: targetRows } = await client.query(
         `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
@@ -71,11 +75,19 @@ router.post('/changeRole', authenticate, async (req, res) => {
 
       const targetCurrentRole = targetRows[0].role;
       const isSelf = found.id === req.user.id;
+      const isOwner = ownerUserId === found.id;
 
-      if (targetCurrentRole === 'admin' && !isSelf && cleanRole !== 'admin') {
+      if (isOwner && cleanRole !== 'admin') {
+        throw new HttpError(403, {
+          error: 'cannot_change_owner_role',
+          message: 'The main admin role cannot be changed.',
+        });
+      }
+
+      if (targetCurrentRole === 'admin' && !isSelf && !isOwner && cleanRole !== 'admin') {
         throw new HttpError(403, {
           error: 'cannot_demote_other_admin',
-          message: 'Admins cannot demote other admins.',
+          message: 'Only the main admin is protected from role changes.',
         });
       }
 
@@ -102,6 +114,52 @@ router.post('/changeRole', authenticate, async (req, res) => {
     });
 
     res.json({ member });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// POST /spaces/:spaceId/transferOwnership — transfer main admin ownership to another admin
+router.post('/transferOwnership', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
+
+  const { userId, username } = req.body;
+  if (!userId && !username) {
+    return res.status(400).json({ error: 'userId or username is required' });
+  }
+
+  try {
+    const result = await withTransaction(async (client) => {
+      await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
+
+      await requireSpaceOwner(client, spaceId, req.user.id);
+
+      let targetId = userId ? Number(userId) : null;
+      if (!targetId && username) {
+        const found = await findUserByUsername(username.trim());
+        if (!found) throw new HttpError(404, 'User not found');
+        targetId = found.id;
+      }
+      if (!Number.isFinite(targetId)) throw new HttpError(400, 'Invalid target user');
+      if (targetId === req.user.id) throw new HttpError(400, 'You already own this space');
+
+      const targetMembership = await getUserInSpace({ spaceId, userId: targetId });
+      if (!targetMembership) throw new HttpError(404, 'User is not a member of this space');
+      if (targetMembership.role !== 'admin') {
+        throw new HttpError(403, {
+          error: 'target_not_admin',
+          message: 'Ownership can only be transferred to another admin.',
+        });
+      }
+
+      const updatedSpace = await transferSpaceOwnership({ spaceId, newOwnerUserId: targetId }, client);
+      if (!updatedSpace) throw new HttpError(404, 'Space not found');
+
+      return updatedSpace;
+    });
+
+    res.json({ space: result });
   } catch (err) {
     handleError(res, err);
   }

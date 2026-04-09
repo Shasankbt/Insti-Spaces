@@ -18,9 +18,9 @@ export default function LeaveModal({ space, token, members, currentUserId, onLea
       onClose();
     } catch (err) {
       const apiErr = err.response?.data;
-      if (apiErr?.error === "last_admin") {
+      if (apiErr?.error === "last_admin" || apiErr?.error === "owner_transfer_required") {
         setMode("last_admin");
-        setLeaveError(apiErr?.message || "You are the only admin. Promote another member before leaving.");
+        setLeaveError(apiErr?.message || "You need another admin before leaving.");
       } else {
         setLeaveError(apiErr?.error || "Failed to leave space");
       }
@@ -74,7 +74,9 @@ export default function LeaveModal({ space, token, members, currentUserId, onLea
             ) : (
               <>
                 <p className="modal__confirm-text">
-                  You are the only admin. Promote another member to admin from the Members list, then try leaving again.
+                  {space.owner_user_id === currentUserId
+                    ? "Transfer main admin ownership to another admin from the Members list, then try leaving again."
+                    : "You are the only admin. Promote another member to admin from the Members list, then try leaving again."}
                 </p>
                 <div className="modal__confirm-actions" style={{ marginTop: "0.75rem" }}>
                   <button className="modal__btn modal__btn--ghost" onClick={onClose}>Close</button>

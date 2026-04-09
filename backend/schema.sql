@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
@@ -38,6 +40,7 @@ ON friend_requests (from_user_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS spaces (
   id SERIAL PRIMARY KEY,
   spacename VARCHAR(50) UNIQUE NOT NULL,
+  owner_user_id INTEGER REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted BOOLEAN DEFAULT FALSE

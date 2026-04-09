@@ -1,4 +1,4 @@
-const { pool } = require('../db');
+const { pool, getSpaceOwnerUserId } = require('../db');
 
 async function withTransaction(fn) {
   const client = await pool.connect();
@@ -43,9 +43,17 @@ async function requireSpaceAdmin(client, spaceId, userId) {
   if (rows[0].role !== 'admin') throw new HttpError(403, 'Only admins can perform this action');
 }
 
+async function requireSpaceOwner(client, spaceId, userId) {
+  await requireSpaceAdmin(client, spaceId, userId);
+  const ownerUserId = await getSpaceOwnerUserId(spaceId, client);
+  if (!ownerUserId || ownerUserId !== userId) {
+    throw new HttpError(403, 'Only the main admin can perform this action');
+  }
+}
+
 function handleError(res, err) {
   if (err instanceof HttpError) return res.status(err.status).json(err.body);
   res.status(500).json({ error: err.message });
 }
 
-module.exports = { roleRank, HttpError, parseSpaceId, withTransaction, requireSpaceAdmin, handleError };
+module.exports = { roleRank, HttpError, parseSpaceId, withTransaction, requireSpaceAdmin, requireSpaceOwner, handleError };

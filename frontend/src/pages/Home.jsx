@@ -1,27 +1,26 @@
-import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export default function Home() {
-  const { user, logout, loading } = useAuth()
-  const navigate = useNavigate()
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    if (!loading && !user) navigate('/login')
-  }, [user, loading])
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
-
-  if (loading) return <p>Loading...</p>
-  if (!user) return null
+  if (loading) return <p>Loading...</p>;
 
   return (
     <div>
-      <h2>Hey {user.username} 👋</h2>
-      <button onClick={handleLogout}>Logout</button>
+      <h1>Insti Spaces</h1>
+      <p>Share spaces, manage members, and collaborate with your community.</p>
+      {user ? (
+        <p>
+          Welcome back, <strong>{user.username}</strong>. Head over to your{" "}
+          <Link to="/spaces">spaces</Link>.
+        </p>
+      ) : (
+        <p>
+          <Link to="/login">Login</Link> or <Link to="/register">create an account</Link>{" "}
+          to get started.
+        </p>
+      )}
     </div>
-  )
+  );
 }

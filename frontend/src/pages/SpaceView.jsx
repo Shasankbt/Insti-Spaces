@@ -22,7 +22,11 @@ export default function SpaceView() {
     membersLoading,
     roleUpdatingUserId,
     roleUpdateError,
+    memberActionUserId,
+    memberActionError,
     handleRoleChange,
+    handleRemoveMember,
+    handleTransferOwnership,
     fetchMembers,
   } = useSpaceView({ id, token, userId: user?.id });
 
@@ -72,16 +76,22 @@ export default function SpaceView() {
         members={members}
         loading={membersLoading}
         currentUserId={user?.id}
+        ownerUserId={space.owner_user_id}
         myRole={space.role}
         onRoleChange={handleRoleChange}
+        onRemoveMember={handleRemoveMember}
+        onTransferOwnership={handleTransferOwnership}
         roleUpdatingUserId={roleUpdatingUserId}
+        memberActionUserId={memberActionUserId}
         roleUpdateError={roleUpdateError}
+        memberActionError={memberActionError}
       />
 
       {openModal === "invite" && (
         <InviteModal
           space={space}
           token={token}
+          members={members}
           onInviteSuccess={() => fetchMembers()}
           onClose={() => setOpenModal(null)}
         />

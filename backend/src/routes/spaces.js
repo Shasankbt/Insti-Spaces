@@ -11,8 +11,10 @@ const {
   generateInviteLink,
   fetchInviteLink,
   markLinkInviteUsed,
+  getSpaceOwnerUserId,
   getSpaceAdminCount,
   getSpaceMemberCount,
+  removeUserFromSpace,
 } = require('../db');
 const { HttpError, parseSpaceId, withTransaction, requireSpaceAdmin, handleError } = require('./spacesHelpers');
 
@@ -51,8 +53,10 @@ router.post('/create', authenticate, async (req, res) => {
   try {
     const space = await withTransaction(async (client) => {
       const { rows } = await client.query(
-        `INSERT INTO spaces (spacename) VALUES ($1) RETURNING id, spacename, created_at`,
-        [spacename.trim()]
+        `INSERT INTO spaces (spacename, owner_user_id)
+         VALUES ($1, $2)
+         RETURNING id, spacename, owner_user_id, created_at`,
+        [spacename.trim(), req.user.id]
       );
       await client.query(
         `INSERT INTO following (userid, spaceid, role) VALUES ($1, $2, 'admin')`,
@@ -116,15 +120,24 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
       if (!rows.length) throw new HttpError(404, 'You are not a member of this space');
 
       const leavingRole = rows[0].role;
+      const ownerUserId = await getSpaceOwnerUserId(spaceId, client);
+      const isOwner = ownerUserId === req.user.id;
       const adminCount = await getSpaceAdminCount(spaceId, client);
+      const memberCount = await getSpaceMemberCount(spaceId, client);
 
-      if (leavingRole === 'admin' && adminCount === 1) {
-        const memberCount = await getSpaceMemberCount(spaceId, client);
+      if (isOwner) {
         if (memberCount === 1) {
           await client.query(`DELETE FROM following WHERE spaceid = $1 AND userid = $2`, [spaceId, req.user.id]);
           await client.query(`DELETE FROM spaces WHERE id = $1`, [spaceId]);
           return { message: 'Left space', spaceDeleted: true };
         }
+        throw new HttpError(403, {
+          error: 'owner_transfer_required',
+          message: 'Transfer main admin ownership to another admin before leaving.',
+        });
+      }
+
+      if (leavingRole === 'admin' && adminCount === 1) {
         throw new HttpError(403, {
           error: 'last_admin',
           message: 'You are the only admin. Promote another member before leaving.',
@@ -134,6 +147,50 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
       await client.query(`UPDATE following SET deleted = true WHERE spaceid = $1 AND userid = $2`, [spaceId, req.user.id]);
       return { message: 'Left space' };
     });
+    res.json(result);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// DELETE /spaces/:spaceId/members/:userId — remove a member from a space (admin only)
+router.delete('/:spaceId/members/:userId', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const targetUserId = Number(req.params.userId);
+  if (!spaceId || !Number.isFinite(targetUserId)) {
+    return res.status(400).json({ error: 'Invalid spaceId or userId' });
+  }
+
+  try {
+    const result = await withTransaction(async (client) => {
+      await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
+
+      await requireSpaceAdmin(client, spaceId, req.user.id);
+
+      if (targetUserId === req.user.id) {
+        throw new HttpError(400, { error: 'cannot_remove_self', message: 'Use leave space instead.' });
+      }
+
+      const ownerUserId = await getSpaceOwnerUserId(spaceId, client);
+      if (ownerUserId === targetUserId) {
+        throw new HttpError(403, {
+          error: 'cannot_remove_owner',
+          message: 'The main admin cannot be removed from the space.',
+        });
+      }
+
+      const removed = await removeUserFromSpace({ spaceId, userId: targetUserId }, client);
+      if (!removed) throw new HttpError(404, 'User is not a member of this space');
+
+      await client.query(
+        `UPDATE role_requests SET deleted = true
+         WHERE user_id = $1 AND space_id = $2 AND status = 'pending' AND deleted = false`,
+        [targetUserId, spaceId]
+      );
+
+      return { removedUserId: targetUserId };
+    });
+
     res.json(result);
   } catch (err) {
     handleError(res, err);
