@@ -108,7 +108,7 @@ const acceptFriendRequest = async ({ requestId, userId }) => {
   }
 };
 
-const listFriends = async ({ userId, limit = 200 }) => {
+const listFriends = async ({ userId, limit = 200, since = new Date(0) }) => {
   const id = Number.parseInt(String(userId), 10);
   if (!Number.isInteger(id)) {
     const err = new Error('Invalid user id');
@@ -119,14 +119,19 @@ const listFriends = async ({ userId, limit = 200 }) => {
   const cleanLimit = Number.parseInt(String(limit), 10);
   const finalLimit = Number.isInteger(cleanLimit) && cleanLimit > 0 ? Math.min(cleanLimit, 500) : 200;
 
+  // responded_at on the accepted friend request acts as the high-water timestamp
   const { rows } = await pool.query(
-    `SELECT u.id, u.username
+    `SELECT u.id, u.username, fr.responded_at AS updated_at
      FROM friends f
-     JOIN users u ON u.id = CASE WHEN f.fid = ($1::int) THEN f.sid ELSE f.fid END
-     WHERE f.fid = ($1::int) OR f.sid = ($1::int)
+     JOIN users u  ON u.id = CASE WHEN f.fid = ($1::int) THEN f.sid ELSE f.fid END
+     JOIN friend_requests fr ON fr.status = 'accepted'
+       AND ((fr.from_user_id = ($1::int) AND fr.to_user_id = u.id)
+         OR (fr.from_user_id = u.id AND fr.to_user_id = ($1::int)))
+     WHERE (f.fid = ($1::int) OR f.sid = ($1::int))
+       AND fr.responded_at > $3
      ORDER BY u.username ASC
      LIMIT $2`,
-    [id, finalLimit]
+    [id, finalLimit, since]
   );
   return rows;
 };
@@ -181,7 +186,7 @@ const listNotifications = async ({ userId, limit = 50, since = new Date(0) }) =>
        FROM role_requests rr
        JOIN users  u_req ON u_req.id = rr.user_id
        JOIN spaces s     ON s.id     = rr.space_id
-       JOIN following f  ON f.spaceid = rr.space_id AND f.userid = ($1::int) AND f.role = 'admin'
+       JOIN following f  ON f.spaceid = rr.space_id AND f.userid = ($1::int) AND f.role IN ('admin', 'moderator')
        WHERE (rr.expires_at IS NULL OR rr.expires_at > NOW())
          AND rr.updated_at > $3
          AND (

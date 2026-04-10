@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { changeRoleInSpace } from "../Api";
+import { changeRoleInSpace, removeMember } from "../Api";
 import { useDeltaSync } from "./useDeltaSync";
 
 const API = "http://localhost:3000";
@@ -10,7 +10,8 @@ export default function useSpaceView({ id, token, userId }) {
   const [spaceError, setSpaceError] = useState(null);
   const [roleUpdatingUserId, setRoleUpdatingUserId] = useState(null);
   const [roleUpdateError, setRoleUpdateError] = useState(null);
-  const membersSinceRef = useRef(null);
+  const [removingUserId, setRemovingUserId] = useState(null);
+  const [removeError, setRemoveError] = useState(null);
   const userIdRef = useRef(userId);
   useEffect(() => { userIdRef.current = userId; }, [userId]);
 
@@ -42,7 +43,7 @@ export default function useSpaceView({ id, token, userId }) {
     sync: fetchMembers,
   } = useDeltaSync(`${API}/spaces/${id}/members`, {
     token,
-    interval: 20_000,
+    interval: 5_000,
   });
 
   const handleRoleChange = async ({ username, userId, role }) => {
@@ -59,6 +60,20 @@ export default function useSpaceView({ id, token, userId }) {
     }
   };
 
+  const handleRemoveMember = async ({ userId: targetUserId }) => {
+    setRemoveError(null);
+    try {
+      setRemovingUserId(targetUserId);
+      await removeMember({ spaceId: space.id, userId: targetUserId, token });
+      fetchMembers();
+    } catch (err) {
+      const apiErr = err.response?.data;
+      setRemoveError(apiErr?.message || apiErr?.error || "Failed to remove member");
+    } finally {
+      setRemovingUserId(null);
+    }
+  };
+
   return {
     space,
     spaceLoading,
@@ -67,7 +82,10 @@ export default function useSpaceView({ id, token, userId }) {
     membersLoading,
     roleUpdatingUserId,
     roleUpdateError,
+    removingUserId,
+    removeError,
     handleRoleChange,
+    handleRemoveMember,
     fetchMembers,
   };
 }

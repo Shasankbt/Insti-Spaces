@@ -32,11 +32,11 @@ INSERT INTO friend_requests (from_user_id, to_user_id, status, responded_at) VAL
 -- =====================
 -- SPACES
 -- =====================
-INSERT INTO spaces (spacename) VALUES
-  ('photography'),
-  ('travel-diaries'),
-  ('foodies'),
-  ('tech-talk');
+INSERT INTO spaces (spacename, owner_user_id) VALUES
+  ('photography',    1),   -- alice  is owner
+  ('travel-diaries', 4),   -- diana  is owner
+  ('foodies',        2),   -- bob    is owner
+  ('tech-talk',      1);   -- alice  is owner
 
 
 -- =====================
@@ -71,5 +71,5 @@ INSERT INTO invite_links (space_id, role, expires_at, single_use) VALUES
 INSERT INTO role_requests (user_id, space_id, role, status) VALUES
   (3, 1, 'contributor', 'pending'),    -- charlie wants to contribute to photography
   (5, 3, 'moderator',   'pending'),    -- eve wants to moderate foodies
-  (2, 2, 'admin',       'rejected'),   -- bob's admin request for travel-diaries was rejected
+  (2, 2, 'moderator',   'rejected'),   -- bob's moderator request for travel-diaries was rejected
   (4, 4, 'contributor', 'accepted');   -- diana's request for tech-talk was accepted

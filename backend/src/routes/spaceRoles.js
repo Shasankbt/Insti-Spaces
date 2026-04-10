@@ -4,25 +4,31 @@ const { authenticate } = require('../middleware');
 const {
   getUserInSpace,
   findUserByUsername,
-  getSpaceAdminCount,
   changeUserRole,
   getPendingRoleRequest,
   createRoleRequest,
   deleteRoleRequest,
 } = require('../db');
 const {
-  roleRank,
   HttpError,
   parseSpaceId,
   withTransaction,
-  requireSpaceAdmin,
+  requireSpaceRole,
   handleError,
 } = require('./spacesHelpers');
+const { canChangeRole, canApproveRoleRequest } = require('../spacePermissions');
 
-// Validates caller is admin and the role request exists and is still pending.
+// Validates caller can approve/reject and the role request exists and is still pending.
 // Must be called inside a transaction.
 async function resolveRoleRequest(client, spaceId, requestId, userId) {
-  await requireSpaceAdmin(client, spaceId, userId);
+  const { rows: callerRows } = await client.query(
+    `SELECT role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
+    [spaceId, userId]
+  );
+  if (!callerRows.length) throw new HttpError(403, 'Not a member of this space');
+  if (!canApproveRoleRequest(callerRows[0].role)) {
+    throw new HttpError(403, 'Insufficient permissions');
+  }
 
   const { rows } = await client.query(
     `SELECT id, user_id, space_id, role, status, created_at, expires_at
@@ -41,7 +47,8 @@ async function resolveRoleRequest(client, spaceId, requestId, userId) {
   return rr;
 }
 
-// POST /spaces/:spaceId/changeRole — change a member's role (admin only)
+// POST /spaces/:spaceId/changeRole — change a member's role (admin or moderator)
+// Cannot assign admin role. Cannot change the admin's role.
 router.post('/changeRole', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
@@ -51,42 +58,39 @@ router.post('/changeRole', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'username is required' });
   }
   const cleanRole = String(role || '').trim();
-  if (!roleRank[cleanRole]) return res.status(400).json({ error: 'Invalid role' });
+  if (!['viewer', 'contributor', 'moderator'].includes(cleanRole)) {
+    return res.status(400).json({ error: 'Invalid role. Cannot assign admin role.' });
+  }
 
   try {
     const found = await findUserByUsername(username.trim());
     if (!found) return res.status(404).json({ error: 'User not found' });
 
     const member = await withTransaction(async (client) => {
-      // Lock all memberships for this space to avoid races (role changes vs last-admin guards).
       await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
 
-      await requireSpaceAdmin(client, spaceId, req.user.id);
+      const callerRole = await requireSpaceRole(client, spaceId, req.user.id, ['admin', 'moderator']);
 
       const { rows: targetRows } = await client.query(
-        `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
+        `SELECT role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
         [spaceId, found.id]
       );
       if (!targetRows.length) throw new HttpError(404, 'User is not a member of this space');
 
       const targetCurrentRole = targetRows[0].role;
-      const isSelf = found.id === req.user.id;
 
-      if (targetCurrentRole === 'admin' && !isSelf && cleanRole !== 'admin') {
+      if (targetCurrentRole === 'admin') {
         throw new HttpError(403, {
-          error: 'cannot_demote_other_admin',
-          message: 'Admins cannot demote other admins.',
+          error: 'cannot_change_admin_role',
+          message: 'The admin role cannot be changed.',
         });
       }
 
-      if (isSelf && targetCurrentRole === 'admin' && cleanRole !== 'admin') {
-        const adminCount = await getSpaceAdminCount(spaceId, client);
-        if (adminCount === 1) {
-          throw new HttpError(403, {
-            error: 'last_admin',
-            message: 'You are the only admin. Promote another member before changing your role.',
-          });
-        }
+      if (!canChangeRole(callerRole, targetCurrentRole, cleanRole)) {
+        throw new HttpError(403, {
+          error: 'insufficient_permissions',
+          message: 'You do not have permission to change this member\'s role.',
+        });
       }
 
       const updated = await changeUserRole({ spaceId, userId: found.id, role: cleanRole }, client);
@@ -123,19 +127,25 @@ router.get('/requestRole', authenticate, async (req, res) => {
   }
 });
 
-// POST /spaces/:spaceId/requestRole — request a role upgrade
+// POST /spaces/:spaceId/requestRole — request a role upgrade (viewer and contributor only)
+// Only contributor and moderator can be requested.
 router.post('/requestRole', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
 
   const requestedRole = String(req.body.role || '').trim();
-  if (!['contributor', 'moderator', 'admin'].includes(requestedRole)) {
-    return res.status(400).json({ error: 'Invalid role' });
+  if (!['contributor', 'moderator'].includes(requestedRole)) {
+    return res.status(400).json({ error: 'Invalid role. Only contributor and moderator can be requested.' });
   }
 
   const membership = await getUserInSpace({ spaceId, userId: req.user.id });
   if (!membership) return res.status(403).json({ error: 'Not a member of this space' });
 
+  if (!['viewer', 'contributor'].includes(membership.role)) {
+    return res.status(403).json({ error: 'Only viewer and contributor members can request a role upgrade.' });
+  }
+
+  const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
   if ((roleRank[requestedRole] ?? 0) <= (roleRank[membership.role] ?? 0)) {
     return res.status(400).json({ error: 'role_not_higher' });
   }
@@ -168,7 +178,7 @@ router.delete('/requestRole', authenticate, async (req, res) => {
   }
 });
 
-// POST /spaces/:spaceId/roleRequests/:requestId/accept — admin accepts role request
+// POST /spaces/:spaceId/roleRequests/:requestId/accept — admin or moderator accepts role request
 router.post('/roleRequests/:requestId/accept', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   const requestId = Number(req.params.requestId);
@@ -178,7 +188,6 @@ router.post('/roleRequests/:requestId/accept', authenticate, async (req, res) =>
 
   try {
     const result = await withTransaction(async (client) => {
-      // Lock memberships first to avoid deadlock with changeRole.
       await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
 
       const rr = await resolveRoleRequest(client, spaceId, requestId, req.user.id);
@@ -200,7 +209,7 @@ router.post('/roleRequests/:requestId/accept', authenticate, async (req, res) =>
   }
 });
 
-// POST /spaces/:spaceId/roleRequests/:requestId/reject — admin rejects role request
+// POST /spaces/:spaceId/roleRequests/:requestId/reject — admin or moderator rejects role request
 router.post('/roleRequests/:requestId/reject', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   const requestId = Number(req.params.requestId);

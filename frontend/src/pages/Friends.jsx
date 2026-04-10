@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import useRequireAuth from "../hooks/useRequireAuth";
-import { createFriendRequest, searchUsers, getFriends } from "../Api";
+import { createFriendRequest, searchUsers } from "../Api";
+import { useDeltaSync } from "../hooks/useDeltaSync";
 import { POLL_INTERVAL } from "../constants";
 
 export default function Friends() {
@@ -13,10 +14,16 @@ export default function Friends() {
 
   const [activeTab, setActiveTab] = useState("friends"); // "friends" | "search"
 
-  // --- My Friends state ---
-  const [friends, setFriends] = useState([]);
-  const [friendsLoading, setFriendsLoading] = useState(false);
-  const [friendsError, setFriendsError] = useState(null);
+  // --- My Friends (delta sync) ---
+  const {
+    data: friends,
+    loading: friendsLoading,
+    error: friendsError,
+  } = useDeltaSync("http://localhost:3000/friends", {
+    token,
+    interval: POLL_INTERVAL,
+    pause: !isAuthenticated || activeTab !== "friends",
+  });
 
   // --- Search state ---
   const [prefix, setPrefix] = useState("");
@@ -25,18 +32,6 @@ export default function Friends() {
   const [loading, setLoading] = useState(false);
   const [addingId, setAddingId] = useState(null);
   const lastPrefixRef = useRef(null);
-
-  const loadFriends = useCallback(async (silent = false) => {
-    if (!silent) { setFriendsError(null); setFriendsLoading(true); }
-    try {
-      const res = await getFriends({ token });
-      setFriends(res.data.friends || []);
-    } catch (err) {
-      if (!silent) setFriendsError(err.response?.data?.error || "Failed to load friends");
-    } finally {
-      if (!silent) setFriendsLoading(false);
-    }
-  }, [token]);
 
   const refreshSearch = useCallback(async (searchPrefix) => {
     if (!searchPrefix) return;
@@ -47,14 +42,6 @@ export default function Friends() {
       // silent — don't overwrite searchError on background poll
     }
   }, [token]);
-
-  // Friends tab: load once + poll while tab is active
-  useEffect(() => {
-    if (!user || !token || activeTab !== "friends") return;
-    loadFriends();
-    const interval = setInterval(() => loadFriends(true), POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [activeTab, user, token, loadFriends]);
 
   // Search tab: poll last searched prefix while tab is active
   useEffect(() => {

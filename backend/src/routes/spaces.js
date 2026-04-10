@@ -11,10 +11,11 @@ const {
   generateInviteLink,
   fetchInviteLink,
   markLinkInviteUsed,
-  getSpaceAdminCount,
   getSpaceMemberCount,
+  removeUserFromSpace,
 } = require('../db');
-const { HttpError, parseSpaceId, withTransaction, requireSpaceAdmin, handleError } = require('./spacesHelpers');
+const { HttpError, parseSpaceId, withTransaction, requireSpaceRole, handleError } = require('./spacesHelpers');
+const { canInviteAs, canRemoveRole } = require('../spacePermissions');
 
 // ── sub-routers ───────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ router.get('/', authenticate, deltaSync, async (req, res) => {
   }
 });
 
-// POST /spaces/create — create a space and auto-follow as admin
+// POST /spaces/create — create a space and auto-follow creator as admin
 router.post('/create', authenticate, async (req, res) => {
   const { spacename } = req.body;
   if (!spacename || !spacename.trim()) {
@@ -51,8 +52,8 @@ router.post('/create', authenticate, async (req, res) => {
   try {
     const space = await withTransaction(async (client) => {
       const { rows } = await client.query(
-        `INSERT INTO spaces (spacename) VALUES ($1) RETURNING id, spacename, created_at`,
-        [spacename.trim()]
+        `INSERT INTO spaces (spacename, owner_user_id) VALUES ($1, $2) RETURNING id, spacename, created_at`,
+        [spacename.trim(), req.user.id]
       );
       await client.query(
         `INSERT INTO following (userid, spaceid, role) VALUES ($1, $2, 'admin')`,
@@ -100,13 +101,13 @@ router.post('/join-via-link', authenticate, async (req, res) => {
 });
 
 // DELETE /spaces/:spaceId/leave — leave a space
+// Admin cannot leave while other members exist; if sole member they can (space is deleted).
 router.delete('/:spaceId/leave', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
 
   try {
     const result = await withTransaction(async (client) => {
-      // Lock all memberships for this space to prevent races (e.g., two admins leaving at once).
       await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
 
       const { rows } = await client.query(
@@ -116,9 +117,8 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
       if (!rows.length) throw new HttpError(404, 'You are not a member of this space');
 
       const leavingRole = rows[0].role;
-      const adminCount = await getSpaceAdminCount(spaceId, client);
 
-      if (leavingRole === 'admin' && adminCount === 1) {
+      if (leavingRole === 'admin') {
         const memberCount = await getSpaceMemberCount(spaceId, client);
         if (memberCount === 1) {
           await client.query(`DELETE FROM following WHERE spaceid = $1 AND userid = $2`, [spaceId, req.user.id]);
@@ -126,8 +126,8 @@ router.delete('/:spaceId/leave', authenticate, async (req, res) => {
           return { message: 'Left space', spaceDeleted: true };
         }
         throw new HttpError(403, {
-          error: 'last_admin',
-          message: 'You are the only admin. Promote another member before leaving.',
+          error: 'admin_cannot_leave',
+          message: 'Admins cannot leave while other members exist.',
         });
       }
 
@@ -156,7 +156,7 @@ router.delete('/:spaceId', authenticate, async (req, res) => {
       );
       if (!spaceRows.length) throw new HttpError(404, 'Space not found');
 
-      await requireSpaceAdmin(client, spaceId, req.user.id);
+      await requireSpaceRole(client, spaceId, req.user.id, ['admin']);
 
       const { rows: postRows } = await client.query(
         `SELECT photo_url FROM space_posts WHERE spaceid = $1`,
@@ -164,13 +164,10 @@ router.delete('/:spaceId', authenticate, async (req, res) => {
       );
       photoUrls = postRows.map((r) => r.photo_url).filter(Boolean);
 
-      // `following.spaceid` does not have ON DELETE CASCADE in the current schema,
-      // so we must delete memberships explicitly before deleting the space.
       await client.query(`DELETE FROM following WHERE spaceid = $1`, [spaceId]);
       await client.query(`DELETE FROM spaces WHERE id = $1`, [spaceId]);
     });
 
-    // Best-effort cleanup of uploaded files after the DB transaction commits.
     const uploadsDir = path.join(__dirname, '../../uploads');
     await Promise.all(
       photoUrls.map(async (url) => {
@@ -190,17 +187,21 @@ router.delete('/:spaceId', authenticate, async (req, res) => {
   }
 });
 
-// POST /spaces/:spaceId/invite — directly add a user to the space (admin only)
+// POST /spaces/:spaceId/invite — directly add a user to the space (admin or moderator)
+// Body: { username?, userId?, role? } — role defaults to 'viewer'; allowed: viewer, contributor, moderator
 router.post('/:spaceId/invite', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
-  const { userId, username } = req.body;
+  const { userId, username, role = 'viewer' } = req.body;
 
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
   if (!userId && !username) return res.status(400).json({ error: 'userId or username is required' });
 
   const membership = await getUserInSpace({ spaceId, userId: req.user.id });
   if (!membership) return res.status(403).json({ error: 'Not a member of this space' });
-  if (membership.role !== 'admin') return res.status(403).json({ error: 'Only admins can invite' });
+
+  if (!canInviteAs(membership.role, role)) {
+    return res.status(403).json({ error: 'You do not have permission to invite with that role' });
+  }
 
   try {
     let targetId = userId ? Number(userId) : null;
@@ -209,7 +210,7 @@ router.post('/:spaceId/invite', authenticate, async (req, res) => {
       if (!found) return res.status(404).json({ error: 'User not found' });
       targetId = found.id;
     }
-    const inserted = await addUserToSpace({ spaceId, userId: targetId });
+    const inserted = await addUserToSpace({ spaceId, userId: targetId, role });
     if (!inserted) return res.status(409).json({ error: 'User is already a member of this space' });
     res.json({ message: 'User invited' });
   } catch (err) {
@@ -217,17 +218,60 @@ router.post('/:spaceId/invite', authenticate, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/generate-invite-link — generate a signed invite link (admin only)
+// GET /spaces/:spaceId/generate-invite-link — generate a signed invite link (admin or moderator)
 router.get('/:spaceId/generate-invite-link', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
 
   const membership = await getUserInSpace({ spaceId, userId: req.user.id });
   if (!membership) return res.status(403).json({ error: 'Not a member of this space' });
-  if (membership.role !== 'admin') return res.status(403).json({ error: 'Only admins can generate invite links' });
+  if (!['admin', 'moderator'].includes(membership.role)) {
+    return res.status(403).json({ error: 'Only admins and moderators can generate invite links' });
+  }
 
   const token = await generateInviteLink(spaceId, 'viewer');
   res.json({ inviteLink: `http://localhost:5173/spaces/join?token=${token}` });
+});
+
+// DELETE /spaces/:spaceId/members/:userId — remove a member (admin or moderator)
+router.delete('/:spaceId/members/:userId', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const targetUserId = Number(req.params.userId);
+  if (!spaceId || !Number.isFinite(targetUserId)) {
+    return res.status(400).json({ error: 'Invalid spaceId or userId' });
+  }
+
+  try {
+    await withTransaction(async (client) => {
+      await client.query(`SELECT userid FROM following WHERE spaceid = $1 FOR UPDATE`, [spaceId]);
+
+      const callerRole = await requireSpaceRole(client, spaceId, req.user.id, ['admin', 'moderator']);
+
+      const { rows: targetRows } = await client.query(
+        `SELECT role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
+        [spaceId, targetUserId]
+      );
+      if (!targetRows.length) throw new HttpError(404, 'User is not a member of this space');
+
+      const targetRole = targetRows[0].role;
+      if (!canRemoveRole(callerRole, targetRole)) {
+        throw new HttpError(403, 'You do not have permission to remove this member');
+      }
+
+      const removed = await removeUserFromSpace({ spaceId, userId: targetUserId }, client);
+      if (!removed) throw new HttpError(404, 'User is not a member of this space');
+
+      // Cancel any pending role requests for the removed user.
+      await client.query(
+        `UPDATE role_requests SET deleted = true
+         WHERE user_id = $1 AND space_id = $2 AND status = 'pending' AND deleted = false`,
+        [targetUserId, spaceId]
+      );
+    });
+    res.json({ message: 'Member removed' });
+  } catch (err) {
+    handleError(res, err);
+  }
 });
 
 module.exports = router;

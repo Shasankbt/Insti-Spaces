@@ -15,8 +15,6 @@ async function withTransaction(fn) {
   }
 }
 
-const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
-
 class HttpError extends Error {
   constructor(status, errorOrMessage) {
     const body = typeof errorOrMessage === 'string'
@@ -33,14 +31,18 @@ function parseSpaceId(req) {
   return Number.isFinite(id) ? id : null;
 }
 
-// Throws HttpError if caller is not an admin of spaceId. Must be called inside a transaction.
-async function requireSpaceAdmin(client, spaceId, userId) {
+// Throws HttpError if caller does not have one of the allowedRoles in the space.
+// Returns the caller's role. Must be called inside a transaction.
+async function requireSpaceRole(client, spaceId, userId, allowedRoles) {
   const { rows } = await client.query(
-    `SELECT role FROM following WHERE spaceid = $1 AND userid = $2`,
+    `SELECT role FROM following WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
     [spaceId, userId]
   );
   if (!rows.length) throw new HttpError(403, 'Not a member of this space');
-  if (rows[0].role !== 'admin') throw new HttpError(403, 'Only admins can perform this action');
+  if (!allowedRoles.includes(rows[0].role)) {
+    throw new HttpError(403, 'Insufficient permissions');
+  }
+  return rows[0].role;
 }
 
 function handleError(res, err) {
@@ -48,4 +50,4 @@ function handleError(res, err) {
   res.status(500).json({ error: err.message });
 }
 
-module.exports = { roleRank, HttpError, parseSpaceId, withTransaction, requireSpaceAdmin, handleError };
+module.exports = { HttpError, parseSpaceId, withTransaction, requireSpaceRole, handleError };

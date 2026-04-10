@@ -151,6 +151,30 @@ const deleteRoleRequest = async ({ userId, spaceId }, client = pool) => {
   return rowCount;
 };
 
+const getSpaceOwnerUserId = async (spaceId, client = pool) => {
+  const cleanSpaceId = Number(spaceId);
+  if (!Number.isFinite(cleanSpaceId)) return null;
+
+  const { rows } = await client.query(
+    `SELECT owner_user_id FROM spaces WHERE id = $1`,
+    [cleanSpaceId]
+  );
+  return rows[0]?.owner_user_id ?? null;
+};
+
+const removeUserFromSpace = async ({ spaceId, userId }, client = pool) => {
+  const cleanSpaceId = Number(spaceId);
+  const cleanUserId = Number(userId);
+  if (!Number.isFinite(cleanSpaceId) || !Number.isFinite(cleanUserId)) return false;
+
+  const { rowCount } = await client.query(
+    `UPDATE following SET deleted = true
+     WHERE spaceid = $1 AND userid = $2 AND deleted = false`,
+    [cleanSpaceId, cleanUserId]
+  );
+  return rowCount > 0;
+};
+
 module.exports = {
   getUserInSpace,
   addUserToSpace,
@@ -158,7 +182,9 @@ module.exports = {
   getSpaceMembers,
   getSpaceAdminCount,
   getSpaceMemberCount,
+  getSpaceOwnerUserId,
   changeUserRole,
+  removeUserFromSpace,
   getPendingRoleRequest,
   createRoleRequest,
   deleteRoleRequest,

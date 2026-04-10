@@ -20,7 +20,7 @@ export default function Spaces() {
     sync,
   } = useDeltaSync("http://localhost:3000/spaces", {
     token,
-    interval: 20_000,
+    interval: 5_000,
     pause: !isAuthenticated || activeTab !== "my-spaces",
   });
 
@@ -35,7 +35,7 @@ export default function Spaces() {
         setCreating(true);
         const res = await createSpace({ spacename: clean, token });
         setCreateSuccess(
-          `Space "${res.data.space?.spacename ?? clean}" created!`
+          `Space "${res.data.space?.spacename ?? clean}" created!`,
         );
         setSpacename("");
         sync(); // immediate delta pull instead of full reload
@@ -45,7 +45,7 @@ export default function Spaces() {
         setCreating(false);
       }
     },
-    [spacename, token, sync]
+    [spacename, token, sync],
   );
 
   if (loading) return <p className="spaces__empty">Loading…</p>;

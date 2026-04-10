@@ -2,9 +2,12 @@ import { useState } from "react";
 import Modal from "./Modal";
 import { inviteToSpace, generateSpaceInviteLink } from "../../Api";
 
+const INVITE_ROLES = ["viewer", "contributor", "moderator"];
+
 export default function InviteModal({ space, token, onClose, onInviteSuccess }) {
   const [tab, setTab] = useState("username");
   const [username, setUsername] = useState("");
+  const [inviteRole, setInviteRole] = useState("viewer");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState(null);
   const [inviteSuccess, setInviteSuccess] = useState(null);
@@ -21,8 +24,8 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }) 
     setInviteSuccess(null);
     try {
       setInviting(true);
-      await inviteToSpace({ spaceId: space.id, username: clean, token });
-      setInviteSuccess(`${clean} invited!`);
+      await inviteToSpace({ spaceId: space.id, username: clean, role: inviteRole, token });
+      setInviteSuccess(`${clean} invited as ${inviteRole}!`);
       setUsername("");
       if (onInviteSuccess) onInviteSuccess();
     } catch (err) {
@@ -82,6 +85,15 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }) 
             placeholder="Enter username…"
             className="modal__input"
           />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value)}
+            className="modal__input"
+          >
+            {INVITE_ROLES.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
           <button
             type="submit"
             className="modal__btn modal__btn--primary"
@@ -113,7 +125,7 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }) 
             </div>
           )}
           {linkError && <p className="modal__error">{linkError}</p>}
-          <p className="modal__note">Anyone with this link can join the space.</p>
+          <p className="modal__note">Anyone with this link can join the space as viewer.</p>
         </div>
       )}
     </Modal>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import { getRoleRequest, requestRole, cancelRoleRequest } from "../../Api";
 
-const roleRank = { viewer: 1, contributor: 2, moderator: 3, admin: 4 };
+const roleRank = { viewer: 1, contributor: 2, moderator: 3 };
 
 export default function RequestRoleModal({ space, token, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export default function RequestRoleModal({ space, token, onClose }) {
   const [error, setError] = useState(null);
 
   const currentRank = roleRank[space.role] ?? 0;
-  const options = ["contributor", "moderator", "admin"].filter((r) => (roleRank[r] ?? 0) > currentRank);
+  const options = ["contributor", "moderator"].filter((r) => (roleRank[r] ?? 0) > currentRank);
 
   useEffect(() => {
     let mounted = true;
@@ -102,7 +102,7 @@ export default function RequestRoleModal({ space, token, onClose }) {
               {submitting ? "Requesting…" : "Submit"}
             </button>
           </div>
-          <p className="modal__note" style={{ marginTop: "0.75rem" }}>Admins will review your request.</p>
+          <p className="modal__note" style={{ marginTop: "0.75rem" }}>Admins and moderators will review your request.</p>
         </>
       )}
       {error && <p className="modal__error">{error}</p>}

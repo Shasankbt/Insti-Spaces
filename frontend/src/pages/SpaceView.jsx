@@ -22,7 +22,10 @@ export default function SpaceView() {
     membersLoading,
     roleUpdatingUserId,
     roleUpdateError,
+    removingUserId,
+    removeError,
     handleRoleChange,
+    handleRemoveMember,
     fetchMembers,
   } = useSpaceView({ id, token, userId: user?.id });
 
@@ -44,6 +47,9 @@ export default function SpaceView() {
   if (spaceError) return null;
   if (!space) return <p>Loading…</p>;
 
+  const canInvite = ["admin", "moderator"].includes(space.role);
+  const canRequestRole = ["viewer", "contributor"].includes(space.role);
+
   return (
     <div>
       <button onClick={() => navigate("/spaces")}>← Back</button>
@@ -51,13 +57,13 @@ export default function SpaceView() {
       <p>Your role: {space.role}</p>
 
       <div>
-        {space.role === "admin" && (
+        {canInvite && (
           <button onClick={() => setOpenModal("invite")}>Invite</button>
         )}
         {["admin", "moderator", "contributor"].includes(space.role) && (
           <button onClick={() => setOpenModal("contribute")}>Contribute</button>
         )}
-        {space.role !== "admin" && (
+        {canRequestRole && (
           <button onClick={() => setOpenModal("requestRole")}>
             Request role upgrade
           </button>
@@ -74,8 +80,11 @@ export default function SpaceView() {
         currentUserId={user?.id}
         myRole={space.role}
         onRoleChange={handleRoleChange}
+        onRemoveMember={handleRemoveMember}
         roleUpdatingUserId={roleUpdatingUserId}
         roleUpdateError={roleUpdateError}
+        removingUserId={removingUserId}
+        removeError={removeError}
       />
 
       {openModal === "invite" && (

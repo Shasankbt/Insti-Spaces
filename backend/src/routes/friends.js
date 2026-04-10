@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const {authenticate} = require('../middleware');
+const { authenticate, deltaSync } = require('../middleware');
 
 const {
   findUserByUsername,
@@ -11,7 +11,7 @@ const {
 const getFriendsHandler = async (req, res) => {
   try {
     const limit = req.query.limit;
-    const friends = await listFriends({ userId: req.user.id, limit });
+    const friends = await listFriends({ userId: req.user.id, limit, since: req.since });
     res.json({ friends });
   } catch (err) {
     const code = err.statusCode && Number.isInteger(err.statusCode) ? err.statusCode : 500;
@@ -19,8 +19,8 @@ const getFriendsHandler = async (req, res) => {
   }
 };
 
-// get friends (GET /friends)
-router.get('/', authenticate, getFriendsHandler);
+// get friends (GET /friends) — supports ?since= for delta sync
+router.get('/', authenticate, deltaSync, getFriendsHandler);
 
 // create friend request
 router.post('/friend-requests', authenticate, async (req, res) => {

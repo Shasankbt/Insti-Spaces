@@ -1,5 +1,9 @@
 import useRequireAuth from "../hooks/useRequireAuth";
-import { acceptFriendRequest, acceptRoleRequest, rejectRoleRequest } from "../Api";
+import {
+  acceptFriendRequest,
+  acceptRoleRequest,
+  rejectRoleRequest,
+} from "../Api";
 import { useDeltaSync } from "../hooks/useDeltaSync";
 import { useState } from "react";
 
@@ -18,9 +22,9 @@ export default function Notifications() {
     refresh,
   } = useDeltaSync("http://localhost:3000/user/notifications", {
     token,
-    interval: 20_000,
+    interval: 5_000,
     pause: !isAuthenticated,
-    idKey: 'uid',
+    idKey: "uid",
   });
 
   const [acceptingId, setAcceptingId] = useState(null);
@@ -47,7 +51,9 @@ export default function Notifications() {
       await acceptRoleRequest({ spaceId, requestId, token });
       await refresh();
     } catch (err) {
-      setActionError(err.response?.data?.error || "Failed to accept role request");
+      setActionError(
+        err.response?.data?.error || "Failed to accept role request",
+      );
     } finally {
       setActingId(null);
     }
@@ -60,7 +66,9 @@ export default function Notifications() {
       await rejectRoleRequest({ spaceId, requestId, token });
       await refresh();
     } catch (err) {
-      setActionError(err.response?.data?.error || "Failed to reject role request");
+      setActionError(
+        err.response?.data?.error || "Failed to reject role request",
+      );
     } finally {
       setActingId(null);
     }
@@ -120,7 +128,9 @@ export default function Notifications() {
                     }
                     disabled={actingId === `role_accept:${n.id}`}
                   >
-                    {actingId === `role_accept:${n.id}` ? "Accepting…" : "Accept"}
+                    {actingId === `role_accept:${n.id}`
+                      ? "Accepting…"
+                      : "Accept"}
                   </button>
                   <button
                     onClick={() =>
@@ -128,7 +138,9 @@ export default function Notifications() {
                     }
                     disabled={actingId === `role_reject:${n.id}`}
                   >
-                    {actingId === `role_reject:${n.id}` ? "Rejecting…" : "Reject"}
+                    {actingId === `role_reject:${n.id}`
+                      ? "Rejecting…"
+                      : "Reject"}
                   </button>
                 </div>
               </div>

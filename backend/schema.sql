@@ -38,6 +38,7 @@ ON friend_requests (from_user_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS spaces (
   id SERIAL PRIMARY KEY,
   spacename VARCHAR(50) UNIQUE NOT NULL,
+  owner_user_id INTEGER REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted BOOLEAN DEFAULT FALSE
@@ -87,8 +88,7 @@ CREATE TABLE IF NOT EXISTS role_requests (
   expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
 
   CONSTRAINT role_requests_status_check CHECK (status IN ('pending', 'accepted', 'rejected')),
-  CONSTRAINT role_requests_role_check   CHECK (role IN ('contributor', 'moderator', 'admin')),
-  CONSTRAINT role_requests_no_viewer    CHECK (role <> 'viewer')
+  CONSTRAINT role_requests_role_check   CHECK (role IN ('contributor', 'moderator'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_role_requests_pending

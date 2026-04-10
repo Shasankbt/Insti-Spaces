@@ -31,7 +31,7 @@ export async function fetchDelta(url, since, token) {
 
   const body = await res.json();
   // pick whichever key your endpoint returns
-  const rows = body.spaces ?? body.members ?? body.items ?? [];
+  const rows = body.spaces ?? body.members ?? body.items ?? body.friends ?? [];
   if (rows.length === 0) return null;
 
   // high-water mark from server timestamps — never Date.now()

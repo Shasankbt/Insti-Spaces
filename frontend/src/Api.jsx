@@ -49,12 +49,15 @@ export const getFollowingSpaces = ({ token, since }) =>
     ...authHeaders(token),
   });
 
-export const inviteToSpace = ({ spaceId, username, token }) =>
+export const inviteToSpace = ({ spaceId, username, userId, role, token }) =>
   axios.post(
     `${API}/spaces/${spaceId}/invite`,
-    { username },
+    { username, userId, role },
     authHeaders(token),
   );
+
+export const removeMember = ({ spaceId, userId, token }) =>
+  axios.delete(`${API}/spaces/${spaceId}/members/${userId}`, authHeaders(token));
 
 export const generateSpaceInviteLink = ({ spaceId, token }) =>
   axios.get(

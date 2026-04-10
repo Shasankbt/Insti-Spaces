@@ -2,11 +2,27 @@ import { useEffect, useRef, useCallback, useReducer } from 'react';
 import { fetchDelta, applyDelta } from '../utils';
 
 const EPOCH = new Date(0);
+const LOG_PREFIX = '[useDeltaSync]';
+
+function logDeltaSync(event, meta = {}) {
+  if (!import.meta.env.DEV) return;
+  console.debug(`${LOG_PREFIX} ${event}`, meta);
+}
 
 function makeReducer(idKey) {
   return function reducer(state, action) {
+    logDeltaSync(`reducer:${action.type}`, {
+      idKey,
+      since: state.since?.toISOString?.(),
+      currentCount: Object.keys(state.dataMap).length,
+    });
+
     switch (action.type) {
       case 'MERGE':
+        logDeltaSync('case:MERGE', {
+          rows: Array.isArray(action.rows) ? action.rows.length : 0,
+          nextSince: action.since?.toISOString?.(),
+        });
         return {
           ...state,
           dataMap: applyDelta(state.dataMap, action.rows, idKey),
@@ -15,9 +31,14 @@ function makeReducer(idKey) {
           error: null,
         };
       case 'RESET':
+        logDeltaSync('case:RESET', { reason: 'manual refresh/full reset' });
         return { ...state, dataMap: {}, since: EPOCH, loading: true };
-      case 'ERROR': return { ...state, error: action.error, loading: false };
-      case 'LOADING': return { ...state, loading: action.value };
+      case 'ERROR':
+        logDeltaSync('case:ERROR', { error: action.error });
+        return { ...state, error: action.error, loading: false };
+      case 'LOADING':
+        logDeltaSync('case:LOADING', { loading: action.value });
+        return { ...state, loading: action.value };
       default: return state;
     }
   };
@@ -46,12 +67,22 @@ export function useDeltaSync(url, { token, interval = 15_000, pause = false, idK
   sinceRef.current = state.since;
 
   const sync = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      logDeltaSync('sync:skipped', { reason: 'missing token' });
+      return;
+    }
+
+    logDeltaSync('sync:start', {
+      url,
+      since: sinceRef.current?.toISOString?.(),
+    });
+
     try {
       const result = await fetchDelta(url, sinceRef.current, token);
       if (!result) { dispatch({ type: 'LOADING', value: false }); return; }
       dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
     } catch (err) {
+      logDeltaSync('sync:error', { error: err.message });
       dispatch({ type: 'ERROR', error: err.message });
     }
   }, [url, token]);
@@ -59,7 +90,13 @@ export function useDeltaSync(url, { token, interval = 15_000, pause = false, idK
   // Full reset: clears the map and re-fetches from epoch.
   // Use this after mutations that can remove items (accept/reject actions).
   const refresh = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      logDeltaSync('refresh:skipped', { reason: 'missing token' });
+      return;
+    }
+
+    logDeltaSync('refresh:start', { url });
+
     sinceRef.current = EPOCH;
     dispatch({ type: 'RESET' });
     try {
@@ -67,6 +104,7 @@ export function useDeltaSync(url, { token, interval = 15_000, pause = false, idK
       if (!result) { dispatch({ type: 'LOADING', value: false }); return; }
       dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
     } catch (err) {
+      logDeltaSync('refresh:error', { error: err.message });
       dispatch({ type: 'ERROR', error: err.message });
     }
   }, [url, token]);

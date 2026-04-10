@@ -5,9 +5,28 @@ import { leaveSpace } from "../../Api";
 export default function LeaveModal({ space, token, members, currentUserId, onLeave, onClose }) {
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState(null);
-  const [mode, setMode] = useState("confirm");
 
-  const isOnlyMember = (members || []).filter((m) => m.userid !== currentUserId).length === 0;
+  const isAdmin = space.role === "admin";
+  const otherMembers = (members || []).filter((m) => m.userid !== currentUserId);
+  const isOnlyMember = otherMembers.length === 0;
+
+  // Admin with other members cannot leave at all — show a block message immediately.
+  if (isAdmin && !isOnlyMember) {
+    return (
+      <Modal title="Leave Space" onClose={onClose}>
+        <div className="modal__confirm">
+          <p className="modal__confirm-text">
+            The admin cannot leave{" "}
+            <strong className="modal__title-accent">{space.spacename}</strong>{" "}
+            while other members exist. Remove all members first or delete the space.
+          </p>
+          <div className="modal__confirm-actions" style={{ marginTop: "0.75rem" }}>
+            <button className="modal__btn modal__btn--ghost" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   const handleLeave = async () => {
     setLeaveError(null);
@@ -18,12 +37,7 @@ export default function LeaveModal({ space, token, members, currentUserId, onLea
       onClose();
     } catch (err) {
       const apiErr = err.response?.data;
-      if (apiErr?.error === "last_admin") {
-        setMode("last_admin");
-        setLeaveError(apiErr?.message || "You are the only admin. Promote another member before leaving.");
-      } else {
-        setLeaveError(apiErr?.error || "Failed to leave space");
-      }
+      setLeaveError(apiErr?.message || apiErr?.error || "Failed to leave space");
     } finally {
       setLeaving(false);
     }
@@ -32,16 +46,26 @@ export default function LeaveModal({ space, token, members, currentUserId, onLea
   return (
     <Modal title="Leave Space" onClose={onClose}>
       <div className="modal__confirm">
-        {mode === "confirm" && (
+        {isAdmin && isOnlyMember ? (
+          <>
+            <p className="modal__confirm-text">
+              You are the only member. Leaving will delete{" "}
+              <strong className="modal__title-accent">{space.spacename}</strong>.
+            </p>
+            <div className="modal__confirm-actions">
+              <button className="modal__btn modal__btn--ghost" onClick={onClose} disabled={leaving}>
+                Cancel
+              </button>
+              <button className="modal__btn modal__btn--danger" onClick={handleLeave} disabled={leaving}>
+                {leaving ? "Leaving…" : "Confirm Leave"}
+              </button>
+            </div>
+          </>
+        ) : (
           <>
             <p className="modal__confirm-text">
               Are you sure you want to leave{" "}
               <strong className="modal__title-accent">{space.spacename}</strong>?
-              {space.role === "admin" && (
-                <span className="modal__confirm-warning">
-                  {" "}You are the admin — leaving will remove your admin privileges.
-                </span>
-              )}
             </p>
             <div className="modal__confirm-actions">
               <button className="modal__btn modal__btn--ghost" onClick={onClose} disabled={leaving}>
@@ -53,37 +77,6 @@ export default function LeaveModal({ space, token, members, currentUserId, onLea
             </div>
           </>
         )}
-
-        {mode === "last_admin" && (
-          <>
-            {isOnlyMember ? (
-              <>
-                <p className="modal__confirm-text">
-                  You are the only member. Leaving will delete{" "}
-                  <strong className="modal__title-accent">{space.spacename}</strong>.
-                </p>
-                <div className="modal__confirm-actions">
-                  <button className="modal__btn modal__btn--ghost" onClick={onClose} disabled={leaving}>
-                    Cancel
-                  </button>
-                  <button className="modal__btn modal__btn--danger" onClick={handleLeave} disabled={leaving}>
-                    {leaving ? "Leaving…" : "Confirm Leave"}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="modal__confirm-text">
-                  You are the only admin. Promote another member to admin from the Members list, then try leaving again.
-                </p>
-                <div className="modal__confirm-actions" style={{ marginTop: "0.75rem" }}>
-                  <button className="modal__btn modal__btn--ghost" onClick={onClose}>Close</button>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
         {leaveError && <p className="modal__error">{leaveError}</p>}
       </div>
     </Modal>
