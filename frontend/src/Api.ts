@@ -152,6 +152,53 @@ export const rejectRoleRequest = ({
 }) =>
   axios.post(`${API}/spaces/${spaceId}/roleRequests/${requestId}/reject`, {}, authHeaders(token));
 
+export const createSpaceFolder = ({
+  spaceId,
+  name,
+  parentId,
+  token,
+}: {
+  spaceId: number;
+  name: string;
+  parentId?: number | null;
+  token: string;
+}) =>
+  axios.post(
+    `${API}/spaces/${spaceId}/folders`,
+    { name, parent_id: parentId ?? null },
+    authHeaders(token),
+  );
+
+export const getSpaceFolders = ({
+  spaceId,
+  token,
+  since,
+}: {
+  spaceId: number;
+  token: string;
+  since?: string;
+}) =>
+  axios.get(`${API}/spaces/${spaceId}/folders`, {
+    params: since ? { since } : {},
+    ...authHeaders(token),
+  });
+
+export const uploadSpaceItems = ({
+  spaceId,
+  formData,
+  token,
+}: {
+  spaceId: number;
+  formData: FormData;
+  token: string;
+}) =>
+  axios.post(`${API}/spaces/${spaceId}/items/upload`, formData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
 export const contributeToSpace = ({
   spaceId,
   formData,

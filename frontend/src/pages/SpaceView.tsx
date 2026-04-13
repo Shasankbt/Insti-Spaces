@@ -5,11 +5,13 @@ import useSpaceView from '../hooks/useSpaceView';
 import MembersList from '../components/SpaceView/MembersList';
 import InviteModal from '../components/SpaceView/InviteModal';
 import ContributeModal from '../components/SpaceView/ContributeModal';
+import UploadItemsModal from '../components/SpaceView/UploadItemsModal';
+import CreateFolderModal from '../components/SpaceView/CreateFolderModal';
 import LeaveModal from '../components/SpaceView/LeaveModal';
 import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
 import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
 
-type ModalType = 'invite' | 'contribute' | 'leave' | 'requestRole' | 'delete' | null;
+type ModalType = 'invite' | 'contribute' | 'uploadItems' | 'createFolder' | 'leave' | 'requestRole' | 'delete' | null;
 
 export default function SpaceView() {
   const { id } = useParams<{ id: string }>();
@@ -60,6 +62,12 @@ export default function SpaceView() {
         {['admin', 'moderator', 'contributor'].includes(space.role) && (
           <button onClick={() => setOpenModal('contribute')}>Contribute</button>
         )}
+        {['admin', 'moderator', 'contributor'].includes(space.role) && (
+          <button onClick={() => setOpenModal('uploadItems')}>Upload</button>
+        )}
+        {['admin', 'moderator', 'contributor'].includes(space.role) && (
+          <button onClick={() => setOpenModal('createFolder')}>New Folder</button>
+        )}
         {canRequestRole && (
           <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
         )}
@@ -92,6 +100,17 @@ export default function SpaceView() {
       )}
       {openModal === 'contribute' && (
         <ContributeModal space={space} token={token!} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal === 'uploadItems' && (
+        <UploadItemsModal space={space} token={token!} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal === 'createFolder' && (
+        <CreateFolderModal
+          space={space}
+          token={token!}
+          onCreated={() => setOpenModal(null)}
+          onClose={() => setOpenModal(null)}
+        />
       )}
       {openModal === 'leave' && (
         <LeaveModal

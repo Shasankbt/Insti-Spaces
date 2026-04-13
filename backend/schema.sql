@@ -35,6 +35,7 @@ ON friend_requests (to_user_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friend_requests_from_status_created
 ON friend_requests (from_user_id, status, created_at DESC);
 
+-- ===================== spaces =====================
 CREATE TABLE IF NOT EXISTS spaces (
   id SERIAL PRIMARY KEY,
   spacename VARCHAR(50) UNIQUE NOT NULL,
@@ -43,7 +44,7 @@ CREATE TABLE IF NOT EXISTS spaces (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted BOOLEAN DEFAULT FALSE
 );
-
+-- ----------------- space management ------------------
 CREATE TABLE IF NOT EXISTS following (
   userid INTEGER NOT NULL REFERENCES users(id),
   spaceid INTEGER NOT NULL REFERENCES spaces(id),
@@ -97,6 +98,54 @@ WHERE status = 'pending' AND deleted = false;
 
 CREATE INDEX IF NOT EXISTS idx_space_posts_spaceid ON space_posts (spaceid);
 
+-- -------------------- space folders -------------------------
+-- Mirrors Google Drive folder tree. NULL parent_id = top-level folder in the space.
+CREATE TABLE space_folders (
+    id          SERIAL       PRIMARY KEY,
+    space_id    INTEGER      NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    created_by  INTEGER      NOT NULL REFERENCES users(id),
+    name        TEXT         NOT NULL,
+    parent_id   INTEGER      REFERENCES space_folders(id) ON DELETE CASCADE,
+
+    -- delta sync
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted     BOOLEAN      NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_space_folders_space_parent
+ON space_folders (space_id, parent_id);
+
+-- -------------------- space items ---------------------------
+CREATE TABLE space_items (
+    photo_id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    space_id           INTEGER      NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    uploader_id        INTEGER      NOT NULL REFERENCES users(id),
+
+    -- NULL folder_id = item lives at the space root (no folder)
+    folder_id          INTEGER      REFERENCES space_folders(id) ON DELETE SET NULL,
+
+    -- storage (paths relative to UPLOADS_ROOT, e.g. spaces/42/originals/uuid.jpg)
+    file_path          TEXT         NOT NULL,
+    thumbnail_path     TEXT         NOT NULL,
+    mime_type          TEXT         NOT NULL,
+    size_bytes         BIGINT       NOT NULL,
+
+    -- metadata
+    display_name       TEXT         NOT NULL,  -- original filename shown to users
+    captured_at        TIMESTAMPTZ,            -- from EXIF, null if unavailable
+    uploaded_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
+    -- recycle bin: NULL = active; non-null = trashed at that timestamp
+    trashed_at         TIMESTAMPTZ,
+
+    -- delta sync
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted            BOOLEAN      NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_space_items_space_folder
+ON space_items (space_id, folder_id);
+
 -- auto-update updated_at on row changes
 CREATE OR REPLACE FUNCTION touch_updated_at()
 RETURNS TRIGGER AS $$
@@ -120,4 +169,12 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 CREATE TRIGGER role_requests_updated_at
 BEFORE UPDATE ON role_requests
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TRIGGER space_folders_updated_at
+BEFORE UPDATE ON space_folders
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE TRIGGER space_items_updated_at
+BEFORE UPDATE ON space_items
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

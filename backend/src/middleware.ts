@@ -49,3 +49,27 @@ export const deltaSync = (req: Request, res: Response, next: NextFunction): void
   req.since = new Date(sinceDate.getTime() + 1);
   next();
 };
+
+import multer, { StorageEngine } from 'multer';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+
+const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
+
+const storage: StorageEngine = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dest = path.join(UPLOADS_ROOT, 'spaces', String(req.params.spaceId), 'originals');
+    fs.mkdirSync(dest, { recursive: true });
+    cb(null, dest);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+export const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});

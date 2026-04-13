@@ -37,6 +37,16 @@ export interface UserSearchResult {
   relationship: 'friends' | 'pending' | 'none';
 }
 
+export interface SpaceFolder {
+  id: number;
+  space_id: number;
+  created_by: number;
+  name: string;
+  parent_id: number | null;
+  updated_at: string;
+  deleted: boolean;
+}
+
 export interface RoleRequest {
   id: number;
   role: Role;
