@@ -582,6 +582,7 @@ code {
   z-index: 120;
   padding: 16px;
   box-sizing: border-box;
+  overscroll-behavior: contain;
 }
 
 .space-feed__lightbox-content {
@@ -616,6 +617,35 @@ code {
   border-radius: 10px;
   border: 1px solid var(--border);
   object-fit: contain;
+}
+
+.space-feed__lightbox-stage {
+  position: relative;
+  display: inline-block;
+}
+
+.space-feed__lightbox-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20%;
+  min-width: 56px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.space-feed__lightbox-hit--prev {
+  left: 0;
+}
+
+.space-feed__lightbox-hit--next {
+  right: 0;
+}
+
+.space-feed__lightbox-hit:disabled {
+  cursor: not-allowed;
 }
 
 .spaces__action-btn--contribute {
