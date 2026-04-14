@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Role } from './types';
+import type { Role, SpacePhoto } from './types';
 
 const API = 'http://localhost:3000';
 
@@ -213,4 +213,18 @@ export const contributeToSpace = ({
       Authorization: `Bearer ${token}`,
       'Content-Type': 'multipart/form-data',
     },
+  });
+
+export const getSpacePageView = ({
+  spaceId,
+  token,
+  limit,
+}: {
+  spaceId: number;
+  token: string;
+  limit?: number;
+}) =>
+  axios.get<{ photos: SpacePhoto[] }>(`${API}/spaces/${spaceId}/pageview`, {
+    params: limit ? { limit } : {},
+    ...authHeaders(token),
   });

@@ -55,6 +55,15 @@ export interface RoleRequest {
   expires_at: string | null;
 }
 
+export interface SpacePhoto {
+  photoId: string;
+  thumbnailUrl: string;
+  fileUrl: string;
+  displayName: string;
+  uploadedAt: string;
+  mimeType: string;
+}
+
 // ── Notification union ────────────────────────────────────────────────────────
 
 export interface FriendRequestNotification {

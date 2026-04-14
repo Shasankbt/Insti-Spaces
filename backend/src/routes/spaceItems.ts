@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import path from 'path';
+import fs from 'fs/promises';
+import sharp from 'sharp';
 import { authenticate, isMember, upload } from '../middleware';
 import { addSpaceItem } from '../db/spaceItems';
 import { getFolderById } from '../db/spaceFolders';
 
 const router = Router({ mergeParams: true });
+const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
 // POST /spaces/:spaceId/items/upload — upload photos to a space (contributor+)
 router.post('/items/upload', authenticate, isMember, upload.array('items', 20), async (req, res) => {
@@ -16,6 +19,12 @@ router.post('/items/upload', authenticate, isMember, upload.array('items', 20), 
   const files = req.files as Express.Multer.File[] | undefined;
   if (!files || files.length === 0) {
     res.status(400).json({ error: 'No files uploaded' });
+    return;
+  }
+
+  const hasNonImage = files.some((file) => !file.mimetype.startsWith('image/'));
+  if (hasNonImage) {
+    res.status(400).json({ error: 'Only image files are allowed' });
     return;
   }
 
@@ -39,19 +48,30 @@ router.post('/items/upload', authenticate, isMember, upload.array('items', 20), 
   }
 
   try {
+    const thumbnailDirAbs = path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'thumbnails');
+    await fs.mkdir(thumbnailDirAbs, { recursive: true });
+
     const items = await Promise.all(
-      files.map((file) => {
+      files.map(async (file) => {
         const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
+        const thumbnailFilename = `${path.parse(file.filename).name}.webp`;
+        const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
+
+        await sharp(file.path)
+          .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toFile(path.join(thumbnailDirAbs, thumbnailFilename));
+
         return addSpaceItem({
           spaceId,
           uploaderId: req.user.id,
           folderId,
           filePath,
-          thumbnailPath: filePath,  // TODO: replace with generated thumbnail path
+          thumbnailPath,
           mimeType: file.mimetype,
           sizeBytes: file.size,
           displayName: file.originalname,
-          capturedAt: null,         // TODO: parse with exifr once installed
+          capturedAt: null,
         });
       }),
     );

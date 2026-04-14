@@ -31,3 +31,27 @@ export const addSpaceItem = async ({
   );
   return rows[0];
 };
+
+export const getSpaceItemsForPageView = async ({
+  spaceId,
+  limit,
+}: {
+  spaceId: number;
+  limit?: number;
+}): Promise<SpaceItem[]> => {
+  const values: Array<number> = [spaceId];
+  let query = `SELECT *
+               FROM space_items
+               WHERE space_id = $1
+                 AND deleted = false
+                 AND trashed_at IS NULL
+               ORDER BY uploaded_at DESC`;
+
+  if (typeof limit === 'number') {
+    values.push(limit);
+    query += ` LIMIT $2`;
+  }
+
+  const { rows } = await pool.query<SpaceItem>(query, values);
+  return rows;
+};

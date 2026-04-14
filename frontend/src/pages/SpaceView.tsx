@@ -10,6 +10,7 @@ import CreateFolderModal from '../components/SpaceView/CreateFolderModal';
 import LeaveModal from '../components/SpaceView/LeaveModal';
 import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
 import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
+import SpaceFeed from '../components/SpaceView/SpaceFeed';
 
 type ModalType = 'invite' | 'contribute' | 'uploadItems' | 'createFolder' | 'leave' | 'requestRole' | 'delete' | null;
 
@@ -76,6 +77,8 @@ export default function SpaceView() {
         )}
         <button onClick={() => setOpenModal('leave')}>Leave</button>
       </div>
+
+      <SpaceFeed spaceId={space.id} token={token!} />
 
       <MembersList
         members={members}
