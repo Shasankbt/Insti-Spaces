@@ -185,6 +185,21 @@ export const uploadToSpace = ({
     },
   });
 
+export const checkSpaceItemHashes = ({
+  spaceId,
+  hashes,
+  token,
+}: {
+  spaceId: number;
+  hashes: string[];
+  token: string;
+}) =>
+  axios.post<{ existingHashes: string[] }>(
+    `${API}/spaces/${spaceId}/items/hash-check`,
+    { hashes },
+    authHeaders(token),
+  );
+
 export const getSpacePageView = ({
   spaceId,
   token,

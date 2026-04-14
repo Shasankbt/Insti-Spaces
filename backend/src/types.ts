@@ -97,6 +97,7 @@ export interface SpaceItem {
   folder_id: number | null;   // null = item lives at space root
   file_path: string;          // relative to UPLOADS_ROOT, e.g. spaces/42/originals/uuid.jpg
   thumbnail_path: string;
+  content_hash: string | null;
   mime_type: string;
   size_bytes: number;
   display_name: string;       // original filename shown to users

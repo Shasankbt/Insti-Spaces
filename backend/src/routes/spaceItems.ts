@@ -7,6 +7,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import { authenticate, isMember, upload } from '../middleware';
 import {
   addSpaceItem,
+  getExistingContentHashes,
   getLikeSummaryForItems,
   isLikeableSpaceItemInSpace,
   likeSpaceItem,
@@ -60,6 +61,26 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 
   const spaceId = req.member.spaceid;
+  const rawContentHashes = (req.body as { content_hashes?: string }).content_hashes;
+  let contentHashes: Array<string | null> = [];
+
+  if (rawContentHashes != null) {
+    try {
+      const parsed = JSON.parse(rawContentHashes) as unknown;
+      if (!Array.isArray(parsed)) {
+        res.status(400).json({ error: 'content_hashes must be an array' });
+        return;
+      }
+      contentHashes = parsed.map((value) => (typeof value === 'string' ? value : null));
+      if (contentHashes.length !== files.length) {
+        res.status(400).json({ error: 'content_hashes count must match uploaded items' });
+        return;
+      }
+    } catch {
+      res.status(400).json({ error: 'Invalid content_hashes payload' });
+      return;
+    }
+  }
 
   // optional folder_id — if omitted, item lands at space root
   const rawFolderId = (req.body as { folder_id?: string }).folder_id;
@@ -83,7 +104,7 @@ const handleUpload = async (req: Request, res: Response) => {
     await fs.mkdir(thumbnailDirAbs, { recursive: true });
 
     const items = await Promise.all(
-      files.map(async (file) => {
+      files.map(async (file, fileIndex) => {
         const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
         const thumbnailExt = isVideoMime(file.mimetype) ? '.jpg' : '.webp';
         const thumbnailFilename = `${path.parse(file.filename).name}${thumbnailExt}`;
@@ -105,6 +126,7 @@ const handleUpload = async (req: Request, res: Response) => {
           folderId,
           filePath,
           thumbnailPath,
+          contentHash: contentHashes[fileIndex] ?? null,
           mimeType: file.mimetype,
           sizeBytes: file.size,
           displayName: file.originalname,
@@ -121,6 +143,33 @@ const handleUpload = async (req: Request, res: Response) => {
 
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
 router.post('/upload', authenticate, isMember, upload.array('items', 20), handleUpload);
+
+// POST /spaces/:spaceId/items/hash-check — return already-existing content hashes in this space
+router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const hashes = (req.body as { hashes?: unknown }).hashes;
+
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  if (!Array.isArray(hashes) || !hashes.every((value) => typeof value === 'string')) {
+    res.status(400).json({ error: 'hashes must be a string array' });
+    return;
+  }
+
+  try {
+    const existingHashes = await getExistingContentHashes({
+      spaceId,
+      hashes,
+    });
+    res.json({ existingHashes });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
 
 // POST /spaces/:spaceId/items/:itemId/like — like a media item
 router.post('/items/:itemId/like', authenticate, isMember, async (req, res) => {

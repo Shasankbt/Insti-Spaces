@@ -7,6 +7,7 @@ export const addSpaceItem = async ({
   folderId = null,
   filePath,
   thumbnailPath,
+  contentHash,
   mimeType,
   sizeBytes,
   displayName,
@@ -17,6 +18,7 @@ export const addSpaceItem = async ({
   folderId?: number | null;
   filePath: string;
   thumbnailPath: string;
+  contentHash?: string | null;
   mimeType: string;
   sizeBytes: number;
   displayName: string;
@@ -24,12 +26,37 @@ export const addSpaceItem = async ({
 }): Promise<SpaceItem> => {
   const { rows } = await pool.query<SpaceItem>(
     `INSERT INTO space_items
-       (space_id, uploader_id, folder_id, file_path, thumbnail_path, mime_type, size_bytes, display_name, captured_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (space_id, uploader_id, folder_id, file_path, thumbnail_path, content_hash, mime_type, size_bytes, display_name, captured_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
-    [spaceId, uploaderId, folderId, filePath, thumbnailPath, mimeType, sizeBytes, displayName, capturedAt],
+    [spaceId, uploaderId, folderId, filePath, thumbnailPath, contentHash ?? null, mimeType, sizeBytes, displayName, capturedAt],
   );
   return rows[0];
+};
+
+export const getExistingContentHashes = async ({
+  spaceId,
+  hashes,
+}: {
+  spaceId: number;
+  hashes: string[];
+}): Promise<string[]> => {
+  if (hashes.length === 0) {
+    return [];
+  }
+
+  const { rows } = await pool.query<{ content_hash: string }>(
+    `SELECT DISTINCT content_hash
+     FROM space_items
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NULL
+       AND content_hash IS NOT NULL
+       AND content_hash = ANY($2::text[])`,
+    [spaceId, hashes],
+  );
+
+  return rows.map((row) => row.content_hash);
 };
 
 export const getSpaceItemsForPageView = async ({

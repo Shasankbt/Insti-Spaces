@@ -127,6 +127,7 @@ CREATE TABLE space_items (
     -- storage (paths relative to UPLOADS_ROOT, e.g. spaces/42/originals/uuid.jpg)
     file_path          TEXT         NOT NULL,
     thumbnail_path     TEXT         NOT NULL,
+    content_hash       TEXT,
     mime_type          TEXT         NOT NULL,
     size_bytes         BIGINT       NOT NULL,
 
@@ -145,6 +146,9 @@ CREATE TABLE space_items (
 
 CREATE INDEX IF NOT EXISTS idx_space_items_space_folder
 ON space_items (space_id, folder_id);
+
+CREATE INDEX IF NOT EXISTS idx_space_items_space_hash
+ON space_items (space_id, content_hash);
 
 -- -------------------- space item likes -----------------------
 CREATE TABLE IF NOT EXISTS space_item_likes (
