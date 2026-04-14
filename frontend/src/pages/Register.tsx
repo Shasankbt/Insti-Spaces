@@ -19,12 +19,10 @@ export default function Register() {
       await registerUser(form);
       const res = await loginUser({ email: form.email, password: form.password });
       const data = res.data as { user: AuthUser; token: string };
-      console.log(res);
       login(data.user, data.token);
       void navigate('/');
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      console.log('res: ', (err as { response?: unknown }).response);
       setError(apiErr?.error ?? 'Registration failed');
     }
   };

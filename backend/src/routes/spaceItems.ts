@@ -2,12 +2,38 @@ import { Router, type Request, type Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import sharp from 'sharp';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
 import { authenticate, isMember, upload } from '../middleware';
 import { addSpaceItem } from '../db/spaceItems';
 import { getFolderById } from '../db/spaceFolders';
 
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
+
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+}
+
+const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
+const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
+const isSupportedMime = (mimeType: string): boolean => isImageMime(mimeType) || isVideoMime(mimeType);
+
+const generateVideoThumbnail = async ({
+  inputPath,
+  outputPath,
+}: {
+  inputPath: string;
+  outputPath: string;
+}): Promise<void> =>
+  new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions(['-vf', 'thumbnail,scale=320:-1', '-frames:v', '1'])
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
+      .run();
+  });
 
 const handleUpload = async (req: Request, res: Response) => {
   if (!['contributor', 'moderator', 'admin'].includes(req.member.role)) {
@@ -21,9 +47,9 @@ const handleUpload = async (req: Request, res: Response) => {
     return;
   }
 
-  const hasNonImage = files.some((file) => !file.mimetype.startsWith('image/'));
-  if (hasNonImage) {
-    res.status(400).json({ error: 'Only image files are allowed' });
+  const hasUnsupportedMedia = files.some((file) => !isSupportedMime(file.mimetype));
+  if (hasUnsupportedMedia) {
+    res.status(400).json({ error: 'Only image and video files are allowed' });
     return;
   }
 
@@ -53,26 +79,19 @@ const handleUpload = async (req: Request, res: Response) => {
     const items = await Promise.all(
       files.map(async (file) => {
         const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
-        const thumbnailFilename = `${path.parse(file.filename).name}.webp`;
+        const thumbnailExt = isVideoMime(file.mimetype) ? '.jpg' : '.webp';
+        const thumbnailFilename = `${path.parse(file.filename).name}${thumbnailExt}`;
         const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
-        const photoUrl = `/uploads/${filePath}`;
-        const thumbnailUrl = `/uploads/${thumbnailPath}`;
 
-        await sharp(file.path)
-          .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toFile(path.join(thumbnailDirAbs, thumbnailFilename));
-
-        console.log(
-          '[space-items/upload] Generated URLs',
-          JSON.stringify({
-            spaceId,
-            uploaderId: req.user.id,
-            originalName: file.originalname,
-            photoUrl,
-            thumbnailUrl,
-          }),
-        );
+        const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
+        if (isVideoMime(file.mimetype)) {
+          await generateVideoThumbnail({ inputPath: file.path, outputPath: thumbnailAbsPath });
+        } else {
+          await sharp(file.path)
+            .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toFile(thumbnailAbsPath);
+        }
 
         return addSpaceItem({
           spaceId,

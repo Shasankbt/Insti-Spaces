@@ -1,47 +1,71 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
 import { uploadToSpace } from '../../Api';
 import type { Space } from '../../types';
 
-interface ContributeModalProps {
+interface MediaPreview {
+  url: string;
+  kind: 'image' | 'video';
+}
+
+interface UploadModalProps {
   space: Space;
   token: string;
   onClose: () => void;
 }
 
-export default function ContributeModal({ space, token, onClose }: ContributeModalProps) {
+export default function UploadModal({ space, token, onClose }: UploadModalProps) {
   const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<MediaPreview[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(
+    () => () => {
+      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
+    },
+    [previews],
+  );
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files ?? []);
+    previews.forEach((preview) => URL.revokeObjectURL(preview.url));
     setFiles(selected);
-    setPreviews(selected.map((f) => URL.createObjectURL(f)));
+    setPreviews(
+      selected.map((file) => ({
+        url: URL.createObjectURL(file),
+        kind: file.type.startsWith('video/') ? 'video' : 'image',
+      })),
+    );
     setUploadError(null);
     setUploadSuccess(null);
   };
 
-  const handleRemove = (idx: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
-    setPreviews((prev) => prev.filter((_, i) => i !== idx));
+  const handleRemove = (index: number) => {
+    setFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+    setPreviews((prev) => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed.url);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!files.length) return;
+
     setUploadError(null);
     setUploadSuccess(null);
     try {
       setUploading(true);
       const formData = new FormData();
-      files.forEach((f) => formData.append('items', f));
+      files.forEach((file) => formData.append('items', file));
       await uploadToSpace({ spaceId: space.id, formData, token });
-      setUploadSuccess(`${files.length} photo${files.length > 1 ? 's' : ''} uploaded!`);
+      setUploadSuccess(`${files.length} item${files.length > 1 ? 's' : ''} uploaded!`);
       setFiles([]);
+      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
       setPreviews([]);
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
@@ -60,24 +84,28 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
       }
       onClose={onClose}
     >
-      <form onSubmit={(e) => void handleSubmit(e)} className="modal__contribute-form">
+      <form onSubmit={(e) => void handleSubmit(e)} className="modal__upload-form">
         <div className="modal__dropzone" onClick={() => inputRef.current?.click()}>
           {previews.length === 0 ? (
             <>
               <div className="modal__dropzone-icon">📷</div>
-              <p className="modal__dropzone-hint">Click to select photos</p>
+              <p className="modal__dropzone-hint">Click to select photos or videos</p>
             </>
           ) : (
             <div className="modal__previews">
-              {previews.map((src, i) => (
-                <div key={i} className="modal__preview-wrap">
-                  <img src={src} alt="" className="modal__preview-img" />
+              {previews.map((preview, index) => (
+                <div key={index} className="modal__preview-wrap">
+                  {preview.kind === 'video' ? (
+                    <video src={preview.url} className="modal__preview-img" muted playsInline />
+                  ) : (
+                    <img src={preview.url} alt="" className="modal__preview-img" />
+                  )}
                   <button
                     type="button"
                     className="modal__preview-remove"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(i);
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleRemove(index);
                     }}
                   >
                     ✕
@@ -86,8 +114,8 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
               ))}
               <div
                 className="modal__preview-add"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={(event) => {
+                  event.stopPropagation();
                   inputRef.current?.click();
                 }}
               >
@@ -99,7 +127,7 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           multiple
           style={{ display: 'none' }}
           onChange={handleFileChange}
@@ -111,7 +139,7 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
         >
           {uploading
             ? 'Uploading…'
-            : `Upload ${files.length > 0 ? `${files.length} Photo${files.length > 1 ? 's' : ''}` : 'Photos'}`}
+            : `Upload ${files.length > 0 ? `${files.length} Item${files.length > 1 ? 's' : ''}` : 'Items'}`}
         </button>
         {uploadError && <p className="modal__error">{uploadError}</p>}
         {uploadSuccess && <p className="modal__success">{uploadSuccess}</p>}

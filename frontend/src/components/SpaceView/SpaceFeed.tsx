@@ -12,6 +12,8 @@ interface SpaceFeedProps {
 const toAbsoluteUrl = (url: string): string =>
   url.startsWith('http://') || url.startsWith('https://') ? url : `${API_BASE}${url}`;
 
+const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
+
 export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   const [photos, setPhotos] = useState<SpacePhoto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,10 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
         setActiveIndex(null);
+        return;
       } else if (event.key === 'ArrowLeft') {
         setActiveIndex((prev) => {
           if (prev == null) return prev;
@@ -154,7 +159,10 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
             <button
               type="button"
               className="space-feed__lightbox-close"
-              onClick={() => setActiveIndex(null)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setActiveIndex(null);
+              }}
               aria-label="Close image"
             >
               ✕
@@ -163,22 +171,38 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               <button
                 type="button"
                 className="space-feed__lightbox-hit space-feed__lightbox-hit--prev"
-                onClick={() => setActiveIndex((prev) => (prev == null ? prev : Math.max(0, prev - 1)))}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveIndex((prev) => (prev == null ? prev : Math.max(0, prev - 1)));
+                }}
                 disabled={!hasPrev}
                 aria-label="Previous image"
               />
               <button
                 type="button"
                 className="space-feed__lightbox-hit space-feed__lightbox-hit--next"
-                onClick={() => setActiveIndex((prev) => (prev == null ? prev : Math.min(photos.length - 1, prev + 1)))}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveIndex((prev) => (prev == null ? prev : Math.min(photos.length - 1, prev + 1)));
+                }}
                 disabled={!hasNext}
                 aria-label="Next image"
               />
-              <img
-                src={toAbsoluteUrl(activePhoto.fileUrl)}
-                alt={activePhoto.displayName}
-                className="space-feed__lightbox-image"
-              />
+              {isVideoMime(activePhoto.mimeType) ? (
+                <video
+                  src={toAbsoluteUrl(activePhoto.fileUrl)}
+                  className="space-feed__lightbox-video"
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={toAbsoluteUrl(activePhoto.fileUrl)}
+                  alt={activePhoto.displayName}
+                  className="space-feed__lightbox-image"
+                />
+              )}
             </div>
           </div>
         </div>

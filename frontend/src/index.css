@@ -619,6 +619,17 @@ code {
   object-fit: contain;
 }
 
+.space-feed__lightbox-video {
+  max-width: min(96vw, 1400px);
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #000;
+}
+
 .space-feed__lightbox-stage {
   position: relative;
   display: inline-block;
@@ -626,7 +637,7 @@ code {
 
 .space-feed__lightbox-hit {
   position: absolute;
-  top: 0;
+  top: 40px;
   bottom: 0;
   width: 20%;
   min-width: 56px;
@@ -875,9 +886,9 @@ code {
   white-space: nowrap;
 }
 
-/* ── Contribute / Photo Upload ── */
+/* ── Upload Media ── */
 
-.modal__contribute-form {
+.modal__upload-form {
   display: flex;
   flex-direction: column;
   gap: 14px;

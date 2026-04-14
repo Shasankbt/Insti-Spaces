@@ -4,7 +4,7 @@ import useRequireAuth from '../hooks/useRequireAuth';
 import useSpaceView from '../hooks/useSpaceView';
 import MembersList from '../components/SpaceView/MembersList';
 import InviteModal from '../components/SpaceView/InviteModal';
-import ContributeModal from '../components/SpaceView/ContributeModal';
+import UploadModal from '../components/SpaceView/UploadModal';
 import CreateFolderModal from '../components/SpaceView/CreateFolderModal';
 import LeaveModal from '../components/SpaceView/LeaveModal';
 import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
@@ -98,7 +98,7 @@ export default function SpaceView() {
         />
       )}
       {openModal === 'upload' && (
-        <ContributeModal space={space} token={token!} onClose={() => setOpenModal(null)} />
+        <UploadModal space={space} token={token!} onClose={() => setOpenModal(null)} />
       )}
       {openModal === 'createFolder' && (
         <CreateFolderModal
