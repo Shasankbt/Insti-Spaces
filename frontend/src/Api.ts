@@ -183,7 +183,7 @@ export const getSpaceFolders = ({
     ...authHeaders(token),
   });
 
-export const uploadSpaceItems = ({
+export const uploadToSpace = ({
   spaceId,
   formData,
   token,
@@ -192,23 +192,7 @@ export const uploadSpaceItems = ({
   formData: FormData;
   token: string;
 }) =>
-  axios.post(`${API}/spaces/${spaceId}/items/upload`, formData, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-
-export const contributeToSpace = ({
-  spaceId,
-  formData,
-  token,
-}: {
-  spaceId: number;
-  formData: FormData;
-  token: string;
-}) =>
-  axios.post(`${API}/spaces/${spaceId}/contribute`, formData, {
+  axios.post(`${API}/spaces/${spaceId}/upload`, formData, {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'multipart/form-data',

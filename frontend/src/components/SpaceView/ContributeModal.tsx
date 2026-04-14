@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import Modal from './Modal';
-import { contributeToSpace } from '../../Api';
+import { uploadToSpace } from '../../Api';
 import type { Space } from '../../types';
 
 interface ContributeModalProps {
@@ -38,8 +38,8 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
     try {
       setUploading(true);
       const formData = new FormData();
-      files.forEach((f) => formData.append('photos', f));
-      await contributeToSpace({ spaceId: space.id, formData, token });
+      files.forEach((f) => formData.append('items', f));
+      await uploadToSpace({ spaceId: space.id, formData, token });
       setUploadSuccess(`${files.length} photo${files.length > 1 ? 's' : ''} uploaded!`);
       setFiles([]);
       setPreviews([]);
@@ -55,7 +55,7 @@ export default function ContributeModal({ space, token, onClose }: ContributeMod
     <Modal
       title={
         <>
-          Contribute to <span className="modal__title-accent">{space.spacename}</span>
+          Upload to <span className="modal__title-accent">{space.spacename}</span>
         </>
       }
       onClose={onClose}

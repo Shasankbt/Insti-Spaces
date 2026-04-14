@@ -19,7 +19,6 @@ import type { Role } from '../types';
 
 import spaceViewRouter from './spaceView';
 import spaceRolesRouter from './spaceRoles';
-import spaceContentRouter from './spaceContent';
 import spaceItemsRouter from './spaceItems';
 import spaceFoldersRouter from './spaceFolders';
 
@@ -29,7 +28,6 @@ const router = express.Router();
 
 router.use('/:spaceId', spaceViewRouter);
 router.use('/:spaceId', spaceRolesRouter);
-router.use('/:spaceId', spaceContentRouter);
 router.use('/:spaceId', spaceItemsRouter);
 router.use('/:spaceId', spaceFoldersRouter);
 

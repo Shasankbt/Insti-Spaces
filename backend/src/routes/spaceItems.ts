@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import sharp from 'sharp';
@@ -9,8 +9,7 @@ import { getFolderById } from '../db/spaceFolders';
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
-// POST /spaces/:spaceId/items/upload — upload photos to a space (contributor+)
-router.post('/items/upload', authenticate, isMember, upload.array('items', 20), async (req, res) => {
+const handleUpload = async (req: Request, res: Response) => {
   if (!['contributor', 'moderator', 'admin'].includes(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
     return;
@@ -56,11 +55,24 @@ router.post('/items/upload', authenticate, isMember, upload.array('items', 20), 
         const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
         const thumbnailFilename = `${path.parse(file.filename).name}.webp`;
         const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
+        const photoUrl = `/uploads/${filePath}`;
+        const thumbnailUrl = `/uploads/${thumbnailPath}`;
 
         await sharp(file.path)
           .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 80 })
           .toFile(path.join(thumbnailDirAbs, thumbnailFilename));
+
+        console.log(
+          '[space-items/upload] Generated URLs',
+          JSON.stringify({
+            spaceId,
+            uploaderId: req.user.id,
+            originalName: file.originalname,
+            photoUrl,
+            thumbnailUrl,
+          }),
+        );
 
         return addSpaceItem({
           spaceId,
@@ -80,6 +92,9 @@ router.post('/items/upload', authenticate, isMember, upload.array('items', 20), 
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
   }
-});
+};
+
+// POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
+router.post('/upload', authenticate, isMember, upload.array('items', 20), handleUpload);
 
 export default router;

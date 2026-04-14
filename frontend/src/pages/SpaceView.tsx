@@ -5,14 +5,13 @@ import useSpaceView from '../hooks/useSpaceView';
 import MembersList from '../components/SpaceView/MembersList';
 import InviteModal from '../components/SpaceView/InviteModal';
 import ContributeModal from '../components/SpaceView/ContributeModal';
-import UploadItemsModal from '../components/SpaceView/UploadItemsModal';
 import CreateFolderModal from '../components/SpaceView/CreateFolderModal';
 import LeaveModal from '../components/SpaceView/LeaveModal';
 import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
 import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
 import SpaceFeed from '../components/SpaceView/SpaceFeed';
 
-type ModalType = 'invite' | 'contribute' | 'uploadItems' | 'createFolder' | 'leave' | 'requestRole' | 'delete' | null;
+type ModalType = 'invite' | 'upload' | 'createFolder' | 'leave' | 'requestRole' | 'delete' | null;
 
 export default function SpaceView() {
   const { id } = useParams<{ id: string }>();
@@ -61,10 +60,7 @@ export default function SpaceView() {
       <div>
         {canInvite && <button onClick={() => setOpenModal('invite')}>Invite</button>}
         {['admin', 'moderator', 'contributor'].includes(space.role) && (
-          <button onClick={() => setOpenModal('contribute')}>Contribute</button>
-        )}
-        {['admin', 'moderator', 'contributor'].includes(space.role) && (
-          <button onClick={() => setOpenModal('uploadItems')}>Upload</button>
+          <button onClick={() => setOpenModal('upload')}>Upload</button>
         )}
         {['admin', 'moderator', 'contributor'].includes(space.role) && (
           <button onClick={() => setOpenModal('createFolder')}>New Folder</button>
@@ -101,11 +97,8 @@ export default function SpaceView() {
           onClose={() => setOpenModal(null)}
         />
       )}
-      {openModal === 'contribute' && (
+      {openModal === 'upload' && (
         <ContributeModal space={space} token={token!} onClose={() => setOpenModal(null)} />
-      )}
-      {openModal === 'uploadItems' && (
-        <UploadItemsModal space={space} token={token!} onClose={() => setOpenModal(null)} />
       )}
       {openModal === 'createFolder' && (
         <CreateFolderModal

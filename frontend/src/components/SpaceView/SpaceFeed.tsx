@@ -16,6 +16,7 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   const [photos, setPhotos] = useState<SpacePhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activePhoto, setActivePhoto] = useState<SpacePhoto | null>(null);
 
   const fetchPhotos = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,19 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   useEffect(() => {
     void fetchPhotos();
   }, [fetchPhotos]);
+
+  useEffect(() => {
+    if (!activePhoto) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActivePhoto(null);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activePhoto]);
 
   return (
     <section className="space-feed">
@@ -52,13 +66,12 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
       {photos.length > 0 && (
         <div className="space-feed__grid">
           {photos.map((photo) => (
-            <a
+            <button
               key={photo.photoId}
-              href={toAbsoluteUrl(photo.fileUrl)}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
               title={photo.displayName}
               className="space-feed__link"
+              onClick={() => setActivePhoto(photo)}
             >
               <img
                 src={toAbsoluteUrl(photo.thumbnailUrl)}
@@ -66,8 +79,34 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                 loading="lazy"
                 className="space-feed__thumb"
               />
-            </a>
+            </button>
           ))}
+        </div>
+      )}
+
+      {activePhoto && (
+        <div
+          className="space-feed__lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={activePhoto.displayName}
+          onClick={() => setActivePhoto(null)}
+        >
+          <div className="space-feed__lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="space-feed__lightbox-close"
+              onClick={() => setActivePhoto(null)}
+              aria-label="Close image"
+            >
+              ✕
+            </button>
+            <img
+              src={toAbsoluteUrl(activePhoto.fileUrl)}
+              alt={activePhoto.displayName}
+              className="space-feed__lightbox-image"
+            />
+          </div>
         </div>
       )}
     </section>

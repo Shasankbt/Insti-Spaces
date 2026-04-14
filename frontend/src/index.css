@@ -547,23 +547,75 @@ code {
 
 .space-feed__grid {
   margin-top: 0.9rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.75rem;
+  column-width: 160px;
+  column-gap: 0.75rem;
 }
 
 .space-feed__link {
   display: block;
   text-decoration: none;
+  margin-bottom: 0.75rem;
+  break-inside: avoid;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: zoom-in;
+  width: 100%;
 }
 
 .space-feed__thumb {
   width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  height: auto;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border);
   display: block;
+}
+
+.space-feed__lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.space-feed__lightbox-content {
+  position: relative;
+  max-width: min(96vw, 1400px);
+  max-height: 92vh;
+}
+
+.space-feed__lightbox-close {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+}
+
+.space-feed__lightbox-image {
+  max-width: min(96vw, 1400px);
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  object-fit: contain;
 }
 
 .spaces__action-btn--contribute {

@@ -7,7 +7,7 @@ const LOG_PREFIX = '[useDeltaSync]';
 
 function logDeltaSync(event: string, meta: Record<string, unknown> = {}): void {
   if (!import.meta.env.DEV) return;
-  console.debug(`${LOG_PREFIX} ${event}`, meta);
+  // console.debug(`${LOG_PREFIX} ${event}`, meta);
 }
 
 interface SyncState<T> {

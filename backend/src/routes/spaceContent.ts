@@ -28,8 +28,9 @@ const upload = multer({
   },
 });
 
-// POST /spaces/:spaceId/contribute — upload photos to a space
-router.post('/contribute', authenticate, upload.array('photos', 10), async (req, res) => {
+// POST /spaces/:spaceId/posts/upload — legacy space_posts upload route
+router.post('/posts/upload', authenticate, upload.array('photos', 10), async (req, res) => {
+  console.log('POST /spaces/:spaceId/posts/upload');
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
     res.status(400).json({ error: 'Invalid spaceId' });
