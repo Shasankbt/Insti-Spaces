@@ -169,20 +169,6 @@ export const createSpaceFolder = ({
     authHeaders(token),
   );
 
-export const getSpaceFolders = ({
-  spaceId,
-  token,
-  since,
-}: {
-  spaceId: number;
-  token: string;
-  since?: string;
-}) =>
-  axios.get(`${API}/spaces/${spaceId}/folders`, {
-    params: since ? { since } : {},
-    ...authHeaders(token),
-  });
-
 export const uploadToSpace = ({
   spaceId,
   formData,

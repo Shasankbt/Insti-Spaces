@@ -1,14 +1,7 @@
-/// <reference types="vite/client" />
 import { useEffect, useRef, useCallback, useReducer } from 'react';
 import { fetchDelta, applyDelta } from '../utils';
 
 const EPOCH = new Date(0);
-const LOG_PREFIX = '[useDeltaSync]';
-
-function logDeltaSync(event: string, meta: Record<string, unknown> = {}): void {
-  if (!import.meta.env.DEV) return;
-  // console.debug(`${LOG_PREFIX} ${event}`, meta);
-}
 
 interface SyncState<T> {
   dataMap: Record<string | number, T>;
@@ -25,18 +18,8 @@ type SyncAction<T> =
 
 function makeReducer<T extends { deleted?: boolean }>(idKey: keyof T) {
   return function reducer(state: SyncState<T>, action: SyncAction<T>): SyncState<T> {
-    logDeltaSync(`reducer:${action.type}`, {
-      idKey: String(idKey),
-      since: state.since?.toISOString?.(),
-      currentCount: Object.keys(state.dataMap).length,
-    });
-
     switch (action.type) {
       case 'MERGE':
-        logDeltaSync('case:MERGE', {
-          rows: Array.isArray(action.rows) ? action.rows.length : 0,
-          nextSince: action.since?.toISOString?.(),
-        });
         return {
           ...state,
           dataMap: applyDelta(state.dataMap, action.rows, idKey),
@@ -45,13 +28,10 @@ function makeReducer<T extends { deleted?: boolean }>(idKey: keyof T) {
           error: null,
         };
       case 'RESET':
-        logDeltaSync('case:RESET', { reason: 'manual refresh/full reset' });
         return { ...state, dataMap: {}, since: EPOCH, loading: true };
       case 'ERROR':
-        logDeltaSync('case:ERROR', { error: action.error });
         return { ...state, error: action.error, loading: false };
       case 'LOADING':
-        logDeltaSync('case:LOADING', { loading: action.value });
         return { ...state, loading: action.value };
       default:
         return state;
@@ -93,16 +73,7 @@ export function useDeltaSync<T extends object>(
   sinceRef.current = state.since;
 
   const sync = useCallback(async (): Promise<void> => {
-    if (!token) {
-      logDeltaSync('sync:skipped', { reason: 'missing token' });
-      return;
-    }
-
-    logDeltaSync('sync:start', {
-      url,
-      since: sinceRef.current?.toISOString?.(),
-    });
-
+    if (!token) return;
     try {
       const result = await fetchDelta<T>(url, sinceRef.current, token);
       if (!result) {
@@ -112,19 +83,12 @@ export function useDeltaSync<T extends object>(
       dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown sync error';
-      logDeltaSync('sync:error', { error: message });
       dispatch({ type: 'ERROR', error: message });
     }
   }, [url, token]);
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!token) {
-      logDeltaSync('refresh:skipped', { reason: 'missing token' });
-      return;
-    }
-
-    logDeltaSync('refresh:start', { url });
-
+    if (!token) return;
     sinceRef.current = EPOCH;
     dispatch({ type: 'RESET' });
     try {
@@ -136,7 +100,6 @@ export function useDeltaSync<T extends object>(
       dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown sync error';
-      logDeltaSync('refresh:error', { error: message });
       dispatch({ type: 'ERROR', error: message });
     }
   }, [url, token]);
@@ -149,7 +112,7 @@ export function useDeltaSync<T extends object>(
     return () => clearInterval(id);
   }, [sync, interval, pause]);
 
-  // pause when tab is hidden
+  // re-sync when tab becomes visible
   useEffect(() => {
     const onVisible = () => {
       if (!document.hidden) void sync();

@@ -1,10 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { authenticate, deltaSync } from '../middleware';
 import { findUserByUsername, createFriendRequest, acceptFriendRequest, listFriends } from '../db';
 
 const router = Router();
 
-const getFriendsHandler = async (req: Request, res: Response): Promise<void> => {
+// get friends (GET /friends) — supports ?since= for delta sync
+router.get('/', authenticate, deltaSync, async (req, res): Promise<void> => {
   try {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const friends = await listFriends({ userId: req.user.id, limit, since: req.since });
@@ -15,10 +16,7 @@ const getFriendsHandler = async (req: Request, res: Response): Promise<void> => 
       statusErr.statusCode && Number.isInteger(statusErr.statusCode) ? statusErr.statusCode : 500;
     res.status(code).json({ error: statusErr.message || 'Failed to load friends' });
   }
-};
-
-// get friends (GET /friends) — supports ?since= for delta sync
-router.get('/', authenticate, deltaSync, getFriendsHandler);
+});
 
 // create friend request
 router.post('/friend-requests', authenticate, async (req, res) => {

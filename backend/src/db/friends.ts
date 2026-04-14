@@ -4,7 +4,7 @@ import type { FriendRequest, Friend } from '../types';
 const apiError = (message: string, statusCode: number) =>
   Object.assign(new Error(message), { statusCode });
 
-export const areFriends = async ({
+const areFriends = async ({
   userAId,
   userBId,
 }: {

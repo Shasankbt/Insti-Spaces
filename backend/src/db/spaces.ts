@@ -65,20 +65,6 @@ export const getSpaceMembers = async (
   return rows;
 };
 
-export const getSpaceAdminCount = async (
-  spaceId: number,
-  client: DbClient = pool,
-): Promise<number> => {
-  const cleanSpaceId = Number(spaceId);
-  if (!Number.isFinite(cleanSpaceId)) return 0;
-
-  const { rows } = await client.query<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM following WHERE spaceid = $1 AND role = 'admin' AND deleted = false`,
-    [cleanSpaceId],
-  );
-  return rows[0]?.count ?? 0;
-};
-
 export const getSpaceMemberCount = async (
   spaceId: number,
   client: DbClient = pool,
@@ -191,20 +177,6 @@ export const deleteRoleRequest = async (
     [cleanUserId, cleanSpaceId],
   );
   return rowCount ?? 0;
-};
-
-export const getSpaceOwnerUserId = async (
-  spaceId: number,
-  client: DbClient = pool,
-): Promise<number | null> => {
-  const cleanSpaceId = Number(spaceId);
-  if (!Number.isFinite(cleanSpaceId)) return null;
-
-  const { rows } = await client.query<{ owner_user_id: number }>(
-    `SELECT owner_user_id FROM spaces WHERE id = $1`,
-    [cleanSpaceId],
-  );
-  return rows[0]?.owner_user_id ?? null;
 };
 
 export const removeUserFromSpace = async (

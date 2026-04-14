@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import Modal from './Modal';
 import { inviteToSpace, generateSpaceInviteLink } from '../../Api';
+import { INVITE_ROLES } from '../../constants';
 import type { Space, Role } from '../../types';
-
-const INVITE_ROLES: Role[] = ['viewer', 'contributor', 'moderator'];
 
 interface InviteModalProps {
   space: Space;

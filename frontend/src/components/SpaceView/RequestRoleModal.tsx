@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import { getRoleRequest, requestRole, cancelRoleRequest } from '../../Api';
+import { ROLE_RANK } from '../../constants';
 import type { Space, RoleRequest, Role } from '../../types';
 
 interface RequestRoleModalProps {
@@ -9,8 +10,6 @@ interface RequestRoleModalProps {
   onClose: () => void;
 }
 
-const roleRank: Record<string, number> = { viewer: 1, contributor: 2, moderator: 3 };
-
 export default function RequestRoleModal({ space, token, onClose }: RequestRoleModalProps) {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<RoleRequest | null>(null);
@@ -18,9 +17,9 @@ export default function RequestRoleModal({ space, token, onClose }: RequestRoleM
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentRank = roleRank[space.role] ?? 0;
+  const currentRank = ROLE_RANK[space.role] ?? 0;
   const options = (['contributor', 'moderator'] as Role[]).filter(
-    (r) => (roleRank[r] ?? 0) > currentRank,
+    (r) => (ROLE_RANK[r] ?? 0) > currentRank,
   );
 
   useEffect(() => {

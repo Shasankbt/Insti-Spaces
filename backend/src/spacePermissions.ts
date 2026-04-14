@@ -63,5 +63,3 @@ export function canRemoveRole(myRole: Role, targetRole: Role): boolean {
 export function canApproveRoleRequest(myRole: Role): boolean {
   return ROLE_PERMISSIONS[myRole].canApproveRequests;
 }
-
-export { ROLE_PERMISSIONS };

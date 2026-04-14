@@ -9,8 +9,7 @@ router.get('/notifications', authenticate, deltaSync, async (req, res) => {
   try {
     const items = await listNotifications({ userId: req.user.id, limit: 50, since: req.since });
     res.json({ items });
-  } catch (err) {
-    console.error(err);
+  } catch {
     res.status(500).json({ error: 'Failed to load notifications' });
   }
 });
