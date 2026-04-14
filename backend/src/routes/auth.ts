@@ -24,7 +24,8 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const user = await createUser(username, email, hash);
     res.status(201).json({ user });
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -46,7 +47,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' },
     );
     res.json({ token, user: { id: user.id, username: user.username } });
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Login failed' });
   }
 });
