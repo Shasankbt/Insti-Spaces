@@ -146,6 +146,17 @@ CREATE TABLE space_items (
 CREATE INDEX IF NOT EXISTS idx_space_items_space_folder
 ON space_items (space_id, folder_id);
 
+-- -------------------- space item likes -----------------------
+CREATE TABLE IF NOT EXISTS space_item_likes (
+  space_item_id UUID        NOT NULL REFERENCES space_items(photo_id) ON DELETE CASCADE,
+  user_id       INTEGER     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (space_item_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_space_item_likes_item_created
+ON space_item_likes (space_item_id, created_at DESC);
+
 -- auto-update updated_at on row changes
 CREATE OR REPLACE FUNCTION touch_updated_at()
 RETURNS TRIGGER AS $$

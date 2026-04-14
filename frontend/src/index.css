@@ -635,6 +635,42 @@ code {
   display: inline-block;
 }
 
+.space-feed__like-burst {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 72px;
+  color: #ef4444;
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 3;
+  animation: like-pop 0.65s ease;
+}
+
+@keyframes like-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.space-feed__like-meta {
+  margin-top: 8px;
+  margin-bottom: 0;
+  font-size: 14px;
+  color: #fff;
+  text-align: center;
+}
+
 .space-feed__lightbox-hit {
   position: absolute;
   top: 40px;

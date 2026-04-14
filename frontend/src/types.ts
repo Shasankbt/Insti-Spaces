@@ -62,6 +62,8 @@ export interface SpacePhoto {
   displayName: string;
   uploadedAt: string;
   mimeType: string;
+  likeCount: number;
+  likedByMe: boolean;
 }
 
 // ── Notification union ────────────────────────────────────────────────────────

@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { authenticate, isMember, deltaSync } from '../middleware';
-import { getSpaceById, getSpaceMembers, getSpaceItemsForPageView } from '../db';
+import {
+  getSpaceById,
+  getSpaceMembers,
+  getSpaceItemsForPageView,
+  getLikeSummaryForItems,
+} from '../db';
 import { parseSpaceId } from './spacesHelpers';
 
 const router = Router({ mergeParams: true });
@@ -57,6 +62,11 @@ router.get('/pageview', authenticate, isMember, async (req, res) => {
     }
 
     const items = await getSpaceItemsForPageView({ spaceId, limit });
+    const likeSummary = await getLikeSummaryForItems({
+      itemIds: items.map((item) => item.photo_id),
+      userId: req.user.id,
+    });
+
     const photos = items.map((item) => ({
       photoId: item.photo_id,
       thumbnailUrl: `/uploads/${item.thumbnail_path}`,
@@ -64,6 +74,8 @@ router.get('/pageview', authenticate, isMember, async (req, res) => {
       displayName: item.display_name,
       uploadedAt: item.uploaded_at,
       mimeType: item.mime_type,
+      likeCount: likeSummary.get(item.photo_id)?.likeCount ?? 0,
+      likedByMe: likeSummary.get(item.photo_id)?.likedByMe ?? false,
     }));
 
     res.json({ photos });

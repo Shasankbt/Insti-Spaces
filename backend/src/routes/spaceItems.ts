@@ -5,8 +5,14 @@ import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { authenticate, isMember, upload } from '../middleware';
-import { addSpaceItem } from '../db/spaceItems';
+import {
+  addSpaceItem,
+  getLikeSummaryForItems,
+  isLikeableSpaceItemInSpace,
+  likeSpaceItem,
+} from '../db/spaceItems';
 import { getFolderById } from '../db/spaceFolders';
+import { parseSpaceId } from './spacesHelpers';
 
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
@@ -115,5 +121,33 @@ const handleUpload = async (req: Request, res: Response) => {
 
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
 router.post('/upload', authenticate, isMember, upload.array('items', 20), handleUpload);
+
+// POST /spaces/:spaceId/items/:itemId/like — like a media item
+router.post('/items/:itemId/like', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  try {
+    const exists = await isLikeableSpaceItemInSpace({ itemId, spaceId });
+    if (!exists) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+
+    await likeSpaceItem({ itemId, userId: req.user.id });
+    const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
+    const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
+    res.json(likeInfo);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
 
 export default router;

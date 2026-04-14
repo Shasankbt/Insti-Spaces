@@ -55,3 +55,89 @@ export const getSpaceItemsForPageView = async ({
   const { rows } = await pool.query<SpaceItem>(query, values);
   return rows;
 };
+
+export const isLikeableSpaceItemInSpace = async ({
+  itemId,
+  spaceId,
+}: {
+  itemId: string;
+  spaceId: number;
+}): Promise<boolean> => {
+  const { rowCount } = await pool.query(
+    `SELECT 1
+     FROM space_items
+     WHERE photo_id = $1
+       AND space_id = $2
+       AND deleted = false
+       AND trashed_at IS NULL`,
+    [itemId, spaceId],
+  );
+  return (rowCount ?? 0) > 0;
+};
+
+export const likeSpaceItem = async ({
+  itemId,
+  userId,
+}: {
+  itemId: string;
+  userId: number;
+}): Promise<void> => {
+  await pool.query(
+    `INSERT INTO space_item_likes (space_item_id, user_id)
+     VALUES ($1, $2)
+     ON CONFLICT (space_item_id, user_id) DO NOTHING`,
+    [itemId, userId],
+  );
+};
+
+export const getLikeSummaryForItems = async ({
+  itemIds,
+  userId,
+}: {
+  itemIds: string[];
+  userId: number;
+}): Promise<Map<string, { likeCount: number; likedByMe: boolean }>> => {
+  const summary = new Map<string, { likeCount: number; likedByMe: boolean }>();
+  if (itemIds.length === 0) {
+    return summary;
+  }
+
+  let rows: Array<{
+    space_item_id: string;
+    like_count: number;
+    liked_by_me: boolean;
+  }> = [];
+
+  try {
+    const result = await pool.query<{
+      space_item_id: string;
+      like_count: number;
+      liked_by_me: boolean;
+    }>(
+      `SELECT
+         l.space_item_id,
+         COUNT(*)::int AS like_count,
+         COALESCE(BOOL_OR(l.user_id = $2), false) AS liked_by_me
+       FROM space_item_likes l
+       WHERE l.space_item_id = ANY($1::uuid[])
+       GROUP BY l.space_item_id`,
+      [itemIds, userId],
+    );
+    rows = result.rows;
+  } catch (err: unknown) {
+    const pgErr = err as { code?: string };
+    if (pgErr.code !== '42P01') {
+      throw err;
+    }
+    return summary;
+  }
+
+  rows.forEach((row) => {
+    summary.set(row.space_item_id, {
+      likeCount: row.like_count,
+      likedByMe: row.liked_by_me,
+    });
+  });
+
+  return summary;
+};

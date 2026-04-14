@@ -212,3 +212,18 @@ export const getSpacePageView = ({
     params: limit ? { limit } : {},
     ...authHeaders(token),
   });
+
+export const likeSpaceItem = ({
+  spaceId,
+  itemId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  token: string;
+}) =>
+  axios.post<{ likeCount: number; likedByMe: boolean }>(
+    `${API}/spaces/${spaceId}/items/${itemId}/like`,
+    {},
+    authHeaders(token),
+  );

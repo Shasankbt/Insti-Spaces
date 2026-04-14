@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getSpacePageView } from '../../Api';
+import { getSpacePageView, likeSpaceItem } from '../../Api';
 import type { SpacePhoto } from '../../types';
 
 const API_BASE = 'http://localhost:3000';
@@ -19,8 +19,13 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [likeBurstVisible, setLikeBurstVisible] = useState(false);
   const wheelAccumulator = useRef(0);
   const lastWheelNavAt = useRef(0);
+  const lastTapAt = useRef(0);
+  const lastVideoClickAt = useRef(0);
+  const likeRequestInFlight = useRef(false);
+  const likeBurstTimeoutRef = useRef<number | null>(null);
 
   const fetchPhotos = useCallback(async () => {
     setLoading(true);
@@ -67,6 +72,31 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
 
   useEffect(() => {
     if (activeIndex == null) return;
+
+    const onFullscreenChange = () => {
+      const fullscreenElement = document.fullscreenElement;
+      if (!(fullscreenElement instanceof HTMLVideoElement)) return;
+
+      if (fullscreenElement.classList.contains('space-feed__lightbox-video')) {
+        void document.exitFullscreen();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, [activeIndex]);
+
+  useEffect(
+    () => () => {
+      if (likeBurstTimeoutRef.current != null) {
+        window.clearTimeout(likeBurstTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (activeIndex == null) return;
     if (photos.length === 0) {
       setActiveIndex(null);
       return;
@@ -109,6 +139,107 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
       wheelAccumulator.current = 0;
     },
     [activeIndex, photos.length],
+  );
+
+  const showLikeBurst = useCallback(() => {
+    if (likeBurstTimeoutRef.current != null) {
+      window.clearTimeout(likeBurstTimeoutRef.current);
+    }
+
+    setLikeBurstVisible(false);
+    window.requestAnimationFrame(() => {
+      setLikeBurstVisible(true);
+      likeBurstTimeoutRef.current = window.setTimeout(() => {
+        setLikeBurstVisible(false);
+      }, 650);
+    });
+  }, []);
+
+  const handleLikeCurrentItem = useCallback(async () => {
+    if (!activePhoto) {
+      return;
+    }
+
+    showLikeBurst();
+
+    if (activePhoto.likedByMe || likeRequestInFlight.current) {
+      return;
+    }
+
+    likeRequestInFlight.current = true;
+    setPhotos((prev) =>
+      prev.map((photo) =>
+        photo.photoId === activePhoto.photoId
+          ? {
+              ...photo,
+              likedByMe: true,
+              likeCount: photo.likeCount + 1,
+            }
+          : photo,
+      ),
+    );
+
+    try {
+      const { data } = await likeSpaceItem({
+        spaceId,
+        itemId: activePhoto.photoId,
+        token,
+      });
+      setPhotos((prev) =>
+        prev.map((photo) =>
+          photo.photoId === activePhoto.photoId
+            ? {
+                ...photo,
+                likeCount: data.likeCount,
+                likedByMe: data.likedByMe,
+              }
+            : photo,
+        ),
+      );
+    } catch {
+      setPhotos((prev) =>
+        prev.map((photo) =>
+          photo.photoId === activePhoto.photoId
+            ? {
+                ...photo,
+                likeCount: Math.max(0, photo.likeCount - 1),
+                likedByMe: false,
+              }
+            : photo,
+        ),
+      );
+    } finally {
+      likeRequestInFlight.current = false;
+    }
+  }, [activePhoto, showLikeBurst, spaceId, token]);
+
+  const handleMediaTouchEnd = useCallback(() => {
+    if (!activePhoto) return;
+
+    const now = Date.now();
+    const DOUBLE_TAP_MS = 280;
+    if (now - lastTapAt.current <= DOUBLE_TAP_MS) {
+      lastTapAt.current = 0;
+      void handleLikeCurrentItem();
+      return;
+    }
+    lastTapAt.current = now;
+  }, [activePhoto, handleLikeCurrentItem]);
+
+  const handleVideoClickCapture = useCallback(
+    (event: React.MouseEvent<HTMLVideoElement>) => {
+      const now = Date.now();
+      const DOUBLE_CLICK_MS = 280;
+      if (now - lastVideoClickAt.current <= DOUBLE_CLICK_MS) {
+        lastVideoClickAt.current = 0;
+        event.preventDefault();
+        event.stopPropagation();
+        void handleLikeCurrentItem();
+        return;
+      }
+      lastVideoClickAt.current = now;
+    },
+    [handleLikeCurrentItem],
   );
 
   return (
@@ -193,17 +324,38 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                   src={toAbsoluteUrl(activePhoto.fileUrl)}
                   className="space-feed__lightbox-video"
                   controls
+                  controlsList="nofullscreen"
+                  disablePictureInPicture
                   autoPlay
                   playsInline
+                  onClickCapture={handleVideoClickCapture}
+                  onDoubleClickCapture={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleLikeCurrentItem();
+                  }}
+                  onTouchEnd={handleMediaTouchEnd}
                 />
               ) : (
                 <img
                   src={toAbsoluteUrl(activePhoto.fileUrl)}
                   alt={activePhoto.displayName}
                   className="space-feed__lightbox-image"
+                  onDoubleClick={() => {
+                    void handleLikeCurrentItem();
+                  }}
+                  onTouchEnd={handleMediaTouchEnd}
                 />
               )}
+              {likeBurstVisible && <div className="space-feed__like-burst">♥</div>}
             </div>
+            <p className="space-feed__like-meta">
+              <span>{activePhoto.likeCount} like{activePhoto.likeCount === 1 ? '' : 's'}</span>
+            </p>
           </div>
         </div>
       )}
