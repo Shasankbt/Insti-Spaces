@@ -83,6 +83,62 @@ export const getSpaceItemsForPageView = async ({
   return rows;
 };
 
+export const getItemsInFolder = async ({
+  spaceId,
+  folderId,
+}: {
+  spaceId: number;
+  folderId: number | null;
+}): Promise<SpaceItem[]> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NULL
+       AND folder_id IS NOT DISTINCT FROM $2
+     ORDER BY uploaded_at DESC`,
+    [spaceId, folderId],
+  );
+  return rows;
+};
+
+export const getItemsInFolderSince = async ({
+  spaceId,
+  folderId,
+  since,
+}: {
+  spaceId: number;
+  folderId: number | null;
+  since: Date;
+}): Promise<SpaceItem[]> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND folder_id IS NOT DISTINCT FROM $2
+       AND updated_at > $3
+     ORDER BY uploaded_at DESC`,
+    [spaceId, folderId, since],
+  );
+  return rows;
+};
+
+export const getItemsByIds = async ({
+  spaceId,
+  itemIds,
+}: {
+  spaceId: number;
+  itemIds: string[];
+}): Promise<SpaceItem[]> => {
+  if (itemIds.length === 0) return [];
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1 AND deleted = false AND trashed_at IS NULL
+       AND photo_id = ANY($2::uuid[])`,
+    [spaceId, itemIds],
+  );
+  return rows;
+};
+
 export const isLikeableSpaceItemInSpace = async ({
   itemId,
   spaceId,

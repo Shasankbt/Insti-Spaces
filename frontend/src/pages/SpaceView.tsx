@@ -5,13 +5,13 @@ import useSpaceView from '../hooks/useSpaceView';
 import MembersList from '../components/SpaceView/MembersList';
 import InviteModal from '../components/SpaceView/InviteModal';
 import UploadModal from '../components/SpaceView/UploadModal';
-import CreateFolderModal from '../components/SpaceView/CreateFolderModal';
 import LeaveModal from '../components/SpaceView/LeaveModal';
 import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
 import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
 import SpaceFeed from '../components/SpaceView/SpaceFeed';
+import SpaceExplorer from '../components/SpaceView/SpaceExplorer';
 
-type ModalType = 'invite' | 'upload' | 'createFolder' | 'leave' | 'requestRole' | 'delete' | null;
+type ModalType = 'invite' | 'upload' | 'leave' | 'requestRole' | 'delete' | null;
 
 export default function SpaceView() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +34,8 @@ export default function SpaceView() {
   } = useSpaceView({ id, token, userId: user?.id });
 
   const [openModal, setOpenModal] = useState<ModalType>(null);
+  const [explorerRefresh, setExplorerRefresh] = useState(0);
+  const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -50,6 +52,7 @@ export default function SpaceView() {
 
   const canInvite = ['admin', 'moderator'].includes(space.role);
   const canRequestRole = ['viewer', 'contributor'].includes(space.role);
+  const canUpload = ['admin', 'moderator', 'contributor'].includes(space.role);
 
   return (
     <div>
@@ -59,12 +62,7 @@ export default function SpaceView() {
 
       <div>
         {canInvite && <button onClick={() => setOpenModal('invite')}>Invite</button>}
-        {['admin', 'moderator', 'contributor'].includes(space.role) && (
-          <button onClick={() => setOpenModal('upload')}>Upload</button>
-        )}
-        {['admin', 'moderator', 'contributor'].includes(space.role) && (
-          <button onClick={() => setOpenModal('createFolder')}>New Folder</button>
-        )}
+        {canUpload && <button onClick={() => setOpenModal('upload')}>Upload</button>}
         {canRequestRole && (
           <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
         )}
@@ -75,6 +73,13 @@ export default function SpaceView() {
       </div>
 
       <SpaceFeed spaceId={space.id} token={token!} />
+      <SpaceExplorer
+        space={space}
+        token={token!}
+        role={space.role}
+        refreshTrigger={explorerRefresh}
+        onFolderChange={setCurrentFolderId}
+      />
 
       <MembersList
         members={members}
@@ -98,14 +103,12 @@ export default function SpaceView() {
         />
       )}
       {openModal === 'upload' && (
-        <UploadModal space={space} token={token!} onClose={() => setOpenModal(null)} />
-      )}
-      {openModal === 'createFolder' && (
-        <CreateFolderModal
+        <UploadModal
           space={space}
           token={token!}
-          onCreated={() => setOpenModal(null)}
+          folderId={currentFolderId}
           onClose={() => setOpenModal(null)}
+          onUploadSuccess={() => setExplorerRefresh((n) => n + 1)}
         />
       )}
       {openModal === 'leave' && (

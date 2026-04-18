@@ -11,7 +11,9 @@ interface MediaPreview {
 interface UploadModalProps {
   space: Space;
   token: string;
+  folderId?: number | null;
   onClose: () => void;
+  onUploadSuccess?: () => void;
 }
 
 const computeSha256Hex = async (file: File): Promise<string> => {
@@ -22,7 +24,7 @@ const computeSha256Hex = async (file: File): Promise<string> => {
     .join('');
 };
 
-export default function UploadModal({ space, token, onClose }: UploadModalProps) {
+export default function UploadModal({ space, token, folderId, onClose, onUploadSuccess }: UploadModalProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<MediaPreview[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -98,7 +100,9 @@ export default function UploadModal({ space, token, onClose }: UploadModalProps)
         const formData = new FormData();
         filesToUpload.forEach((file) => formData.append('items', file));
         formData.append('content_hashes', JSON.stringify(hashesToUpload));
+        if (folderId != null) formData.append('folder_id', String(folderId));
         await uploadToSpace({ spaceId: space.id, formData, token });
+        onUploadSuccess?.();
       }
 
       setUploadSuccess(

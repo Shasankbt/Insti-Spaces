@@ -4,15 +4,25 @@ import fs from 'fs/promises';
 import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
-import { authenticate, isMember, upload } from '../middleware';
+import archiver from 'archiver';
+import { authenticate, deltaSync, isMember, upload } from '../middleware';
 import {
   addSpaceItem,
   getExistingContentHashes,
+  getItemsByIds,
+  getItemsInFolder,
+  getItemsInFolderSince,
   getLikeSummaryForItems,
   isLikeableSpaceItemInSpace,
   likeSpaceItem,
 } from '../db/spaceItems';
-import { getFolderById } from '../db/spaceFolders';
+import {
+  getFolderAncestors,
+  getFolderByName,
+  getFolderById,
+  getFolderSubtreeItems,
+  getSubfolders,
+} from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
 
 const router = Router({ mergeParams: true });
@@ -141,6 +151,112 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 };
 
+// GET /spaces/:spaceId/explorer?path=FolderA/SubfolderB — browse a directory
+router.get('/explorer', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  const rawPath = typeof req.query.path === 'string' ? req.query.path.trim() : '';
+  const segments = rawPath
+    ? rawPath.split('/').map((s) => decodeURIComponent(s).trim()).filter(Boolean)
+    : [];
+
+  try {
+    let folderId: number | null = null;
+    let currentFolder = null;
+
+    for (const segment of segments) {
+      const folder = await getFolderByName({ spaceId, name: segment, parentId: folderId });
+      if (!folder) {
+        res.status(404).json({ error: `Folder "${segment}" not found` });
+        return;
+      }
+      folderId = folder.id;
+      currentFolder = folder;
+    }
+
+    const breadcrumbs = folderId != null ? await getFolderAncestors(folderId) : [];
+    const folders = await getSubfolders({ spaceId, parentId: folderId });
+    const rawItems = await getItemsInFolder({ spaceId, folderId });
+
+    const toFolder = (f: { id: number; name: string; parent_id: number | null }) => ({
+      id: f.id,
+      name: f.name,
+      parentId: f.parent_id,
+    });
+
+    const toItem = (item: {
+      photo_id: string;
+      thumbnail_path: string;
+      file_path: string;
+      display_name: string;
+      uploaded_at: Date;
+      mime_type: string;
+      size_bytes: number;
+      folder_id: number | null;
+    }) => ({
+      itemId: item.photo_id,
+      thumbnailUrl: `/uploads/${item.thumbnail_path}`,
+      fileUrl: `/uploads/${item.file_path}`,
+      displayName: item.display_name,
+      uploadedAt: item.uploaded_at,
+      mimeType: item.mime_type,
+      sizeBytes: item.size_bytes,
+    });
+
+    res.json({
+      currentFolder: currentFolder ? toFolder(currentFolder) : null,
+      breadcrumbs: breadcrumbs.map(toFolder),
+      folders: folders.map(toFolder),
+      items: rawItems.map(toItem),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/items?folder_id=<n>&since=<iso> — delta-sync items in a folder
+router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  const rawFolderId = req.query.folder_id as string | undefined;
+  let folderId: number | null = null;
+  if (rawFolderId != null && rawFolderId !== '' && rawFolderId !== 'null') {
+    folderId = Number(rawFolderId);
+    if (!Number.isFinite(folderId)) {
+      res.status(400).json({ error: 'Invalid folder_id' });
+      return;
+    }
+  }
+
+  try {
+    const rawItems = await getItemsInFolderSince({ spaceId, folderId, since: req.since });
+    const items = rawItems.map((item) => ({
+      itemId: item.photo_id,
+      thumbnailUrl: `/uploads/${item.thumbnail_path}`,
+      fileUrl: `/uploads/${item.file_path}`,
+      displayName: item.display_name,
+      uploadedAt: item.uploaded_at,
+      mimeType: item.mime_type,
+      sizeBytes: item.size_bytes,
+      updated_at: item.updated_at,
+      deleted: item.deleted,
+    }));
+    res.json({ items });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
 router.post('/upload', authenticate, isMember, upload.array('items', 20), handleUpload);
 
@@ -165,6 +281,56 @@ router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
       hashes,
     });
     res.json({ existingHashes });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /spaces/:spaceId/download — stream a ZIP of selected items and/or folders
+router.post('/download', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  const { itemIds = [], folderIds = [] } = req.body as {
+    itemIds?: string[];
+    folderIds?: number[];
+  };
+
+  if (itemIds.length === 0 && folderIds.length === 0) {
+    res.status(400).json({ error: 'No items or folders selected' });
+    return;
+  }
+
+  try {
+    const [directItems, folderItems] = await Promise.all([
+      getItemsByIds({ spaceId, itemIds }),
+      getFolderSubtreeItems({ spaceId, folderIds }),
+    ]);
+
+    const toZip: Array<{ filePath: string; zipPath: string }> = [
+      ...directItems.map((item) => ({
+        filePath: item.file_path,
+        zipPath: item.display_name,
+      })),
+      ...folderItems.map((item) => ({
+        filePath: item.file_path,
+        zipPath: `${item.folder_path}/${item.display_name}`,
+      })),
+    ];
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="download.zip"');
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+    for (const entry of toZip) {
+      archive.file(path.resolve(UPLOADS_ROOT, entry.filePath), { name: entry.zipPath });
+    }
+    await archive.finalize();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

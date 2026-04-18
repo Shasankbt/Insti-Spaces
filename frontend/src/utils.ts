@@ -29,8 +29,9 @@ export async function fetchDelta<T extends object>(
   since: Date,
   token: string,
 ): Promise<{ rows: T[]; newSince: Date } | null> {
-  const params = new URLSearchParams({ since: since.toISOString() });
-  const res = await fetch(`${url}?${params}`, {
+  const reqUrl = new URL(url);
+  reqUrl.searchParams.set('since', since.toISOString());
+  const res = await fetch(reqUrl.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -40,7 +41,7 @@ export async function fetchDelta<T extends object>(
   const body = (await res.json()) as Record<string, T[] | undefined>;
   // pick whichever key your endpoint returns
   const rows: T[] =
-    body.spaces ?? body.members ?? body.items ?? body.friends ?? [];
+    body.spaces ?? body.members ?? body.items ?? body.folders ?? body.friends ?? [];
   if (rows.length === 0) return null;
 
   // high-water mark from server timestamps — never Date.now()

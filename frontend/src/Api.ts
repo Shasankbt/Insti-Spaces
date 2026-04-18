@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Role, SpacePhoto } from './types';
+import type { ExplorerResponse, Role, SpaceItem, SpacePhoto } from './types';
 
 const API = 'http://localhost:3000';
 
@@ -213,6 +213,49 @@ export const getSpacePageView = ({
     params: limit ? { limit } : {},
     ...authHeaders(token),
   });
+
+export const getSpaceItems = ({ spaceId, token }: { spaceId: number; token: string }) =>
+  axios.get<{ items: SpaceItem[] }>(`${API}/spaces/${spaceId}/items`, authHeaders(token));
+
+export const getSpaceExplorer = ({
+  spaceId,
+  token,
+  path,
+}: {
+  spaceId: number;
+  token: string;
+  path?: string;
+}) =>
+  axios.get<ExplorerResponse>(`${API}/spaces/${spaceId}/explorer`, {
+    params: path ? { path } : {},
+    ...authHeaders(token),
+  });
+
+export const downloadSelected = async ({
+  spaceId,
+  token,
+  itemIds,
+  folderIds,
+}: {
+  spaceId: number;
+  token: string;
+  itemIds: string[];
+  folderIds: number[];
+}): Promise<void> => {
+  const res = await fetch(`${API}/spaces/${spaceId}/download`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ itemIds, folderIds }),
+  });
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'download.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 export const likeSpaceItem = ({
   spaceId,

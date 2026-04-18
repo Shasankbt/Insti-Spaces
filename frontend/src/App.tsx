@@ -24,6 +24,7 @@ export default function App() {
               <Route path="/spaces" element={<Spaces />} />
               <Route path="/spaces/join" element={<JoinSpace />} />
               <Route path="/spaces/:id" element={<SpaceView />} />
+              <Route path="/spaces/:id/*" element={<SpaceView />} />
               <Route path="/friends" element={<Friends />} />
               <Route path="/notifications" element={<Notifications />} />
             </Routes>

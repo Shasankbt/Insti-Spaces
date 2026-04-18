@@ -66,6 +66,30 @@ export interface SpacePhoto {
   likedByMe: boolean;
 }
 
+export interface SpaceItem {
+  itemId: string;
+  thumbnailUrl: string;
+  fileUrl: string;
+  displayName: string;
+  uploadedAt: string;
+  mimeType: string;
+  sizeBytes: number;
+  folderId: number | null;
+}
+
+export interface ExplorerFolder {
+  id: number;
+  name: string;
+  parentId: number | null;
+}
+
+export interface ExplorerResponse {
+  currentFolder: ExplorerFolder | null;
+  breadcrumbs: ExplorerFolder[];
+  folders: ExplorerFolder[];
+  items: SpaceItem[];
+}
+
 // ── Notification union ────────────────────────────────────────────────────────
 
 export interface FriendRequestNotification {
