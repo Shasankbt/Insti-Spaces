@@ -793,6 +793,13 @@ code {
   margin-top: 10px !important;
 }
 
+.modal__empty {
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.75;
+  margin: 4px 0 !important;
+}
+
 /* ── Modal Tabs ── */
 
 .modal__tabs {
@@ -920,6 +927,47 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Invite Friends ── */
+
+.modal__friends-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modal__friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.modal__friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--code-bg);
+}
+
+.modal__friend-name {
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.modal__friend-meta {
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 2px;
 }
 
 /* ── Upload Media ── */
@@ -1273,6 +1321,27 @@ code {
   border-top: 1px solid var(--border, #334155);
 }
 
+.space-explorer__trash-actions {
+  display: grid;
+  gap: 6px;
+  padding: 8px 2px 0;
+}
+
+.space-explorer__trash-meta {
+  color: var(--text);
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.space-explorer__trash-actions button {
+  width: 100%;
+  min-height: 30px;
+}
+
+.space-explorer__trash-danger {
+  color: #dc2626;
+}
+
 /* Right info panel */
 .space-explorer__info-panel {
   width: 220px;
@@ -1410,3 +1479,37 @@ code {
 .space-explorer__lightbox-hit--prev { left: 0; }
 .space-explorer__lightbox-hit--next { right: 0; }
 .space-explorer__lightbox-hit:disabled { cursor: not-allowed; }
+
+/* ── Shared Media View ── */
+
+.media-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100vh - 120px);
+}
+
+.media-view__stage {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 420px;
+  background: #050505;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.media-view__image,
+.media-view__video {
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  object-fit: contain;
+}
+
+.media-view__name {
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 !important;
+  word-break: break-word;
+}

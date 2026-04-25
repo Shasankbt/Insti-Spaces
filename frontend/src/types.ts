@@ -75,6 +75,8 @@ export interface SpaceItem {
   mimeType: string;
   sizeBytes: number;
   folderId: number | null;
+  trashedAt?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface ExplorerFolder {

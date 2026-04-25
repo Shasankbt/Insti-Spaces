@@ -9,6 +9,7 @@ import Notifications from './pages/Notifications';
 import Spaces from './pages/Spaces';
 import JoinSpace from './pages/JoinSpace';
 import SpaceView from './pages/SpaceView';
+import MediaView from './pages/MediaView';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/spaces" element={<Spaces />} />
               <Route path="/spaces/join" element={<JoinSpace />} />
+              <Route path="/media" element={<MediaView />} />
               <Route path="/spaces/:id" element={<SpaceView />} />
               <Route path="/spaces/:id/*" element={<SpaceView />} />
               <Route path="/friends" element={<Friends />} />

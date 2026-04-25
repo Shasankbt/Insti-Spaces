@@ -98,6 +98,7 @@ export default function SpaceView() {
         <InviteModal
           space={space}
           token={token!}
+          members={members}
           onInviteSuccess={() => void fetchMembers()}
           onClose={() => setOpenModal(null)}
         />

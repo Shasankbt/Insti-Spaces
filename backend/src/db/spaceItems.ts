@@ -122,6 +122,22 @@ export const getItemsInFolderSince = async ({
   return rows;
 };
 
+export const getTrashedItems = async ({
+  spaceId,
+}: {
+  spaceId: number;
+}): Promise<SpaceItem[]> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NOT NULL
+     ORDER BY trashed_at DESC`,
+    [spaceId],
+  );
+  return rows;
+};
+
 export const getItemsByIds = async ({
   spaceId,
   itemIds,
@@ -137,6 +153,211 @@ export const getItemsByIds = async ({
     [spaceId, itemIds],
   );
   return rows;
+};
+
+export const getItemById = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NULL
+     LIMIT 1`,
+    [spaceId, itemId],
+  );
+  return rows[0] ?? null;
+};
+
+export const getItemByMediaPath = async ({
+  spaceId,
+  mediaPath,
+}: {
+  spaceId: number;
+  mediaPath: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND deleted = false
+       AND (file_path = $2 OR thumbnail_path = $2)
+     LIMIT 1`,
+    [spaceId, mediaPath],
+  );
+  return rows[0] ?? null;
+};
+
+export const moveSpaceItemToTrash = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET trashed_at = NOW()
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemId],
+  );
+  return rows[0] ?? null;
+};
+
+export const restoreSpaceItemFromTrash = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET trashed_at = NULL
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NOT NULL
+     RETURNING *`,
+    [spaceId, itemId],
+  );
+  return rows[0] ?? null;
+};
+
+export const renameSpaceItem = async ({
+  spaceId,
+  itemId,
+  displayName,
+}: {
+  spaceId: number;
+  itemId: string;
+  displayName: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET display_name = $3
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemId, displayName],
+  );
+  return rows[0] ?? null;
+};
+
+export const moveSpaceItem = async ({
+  spaceId,
+  itemId,
+  folderId,
+}: {
+  spaceId: number;
+  itemId: string;
+  folderId: number | null;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET folder_id = $3
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemId, folderId],
+  );
+  return rows[0] ?? null;
+};
+
+export const softDeleteSpaceItem = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<boolean> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true,
+         trashed_at = COALESCE(trashed_at, NOW())
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+     RETURNING photo_id`,
+    [spaceId, itemId],
+  );
+  return (rowCount ?? 0) > 0;
+};
+
+export const permanentlyDeleteTrashedSpaceItem = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<boolean> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NOT NULL
+     RETURNING photo_id`,
+    [spaceId, itemId],
+  );
+  return (rowCount ?? 0) > 0;
+};
+
+export const emptySpaceTrash = async ({
+  spaceId,
+}: {
+  spaceId: number;
+}): Promise<number> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NOT NULL`,
+    [spaceId],
+  );
+  return rowCount ?? 0;
+};
+
+export const purgeExpiredSpaceTrash = async ({
+  spaceId,
+}: {
+  spaceId: number;
+}): Promise<number> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NOT NULL
+       AND trashed_at <= NOW() - INTERVAL '7 days'`,
+    [spaceId],
+  );
+  return rowCount ?? 0;
+};
+
+export const purgeExpiredTrash = async (): Promise<number> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE deleted = false
+       AND trashed_at IS NOT NULL
+       AND trashed_at <= NOW() - INTERVAL '7 days'`,
+  );
+  return rowCount ?? 0;
 };
 
 export const isLikeableSpaceItemInSpace = async ({

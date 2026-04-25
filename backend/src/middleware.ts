@@ -46,7 +46,8 @@ export const deltaSync = (req: Request, res: Response, next: NextFunction): void
     return;
   }
 
-  req.since = new Date(sinceDate.getTime() + 1);
+  // Do not offset by +1ms. JS Date drops microseconds, and adding 1ms can skip rows.
+  req.since = sinceDate;
   next();
 };
 

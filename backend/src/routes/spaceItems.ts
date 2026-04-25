@@ -9,12 +9,22 @@ import { authenticate, deltaSync, isMember, upload } from '../middleware';
 import {
   addSpaceItem,
   getExistingContentHashes,
+  getItemById,
+  getItemByMediaPath,
   getItemsByIds,
   getItemsInFolder,
   getItemsInFolderSince,
+  getTrashedItems,
   getLikeSummaryForItems,
+  emptySpaceTrash,
   isLikeableSpaceItemInSpace,
   likeSpaceItem,
+  moveSpaceItem,
+  moveSpaceItemToTrash,
+  permanentlyDeleteTrashedSpaceItem,
+  purgeExpiredSpaceTrash,
+  renameSpaceItem,
+  restoreSpaceItemFromTrash,
 } from '../db/spaceItems';
 import {
   getFolderAncestors,
@@ -35,6 +45,42 @@ if (ffmpegStatic) {
 const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
 const isSupportedMime = (mimeType: string): boolean => isImageMime(mimeType) || isVideoMime(mimeType);
+const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
+const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
+
+const toMediaUrl = (spaceId: number, storagePath: string): string => {
+  const kind = path.basename(path.dirname(storagePath));
+  const filename = path.basename(storagePath);
+  return `/spaces/${spaceId}/media/${kind}/${encodeURIComponent(filename)}`;
+};
+
+const toItemResponse = (spaceId: number, item: {
+  photo_id: string;
+  thumbnail_path: string;
+  file_path: string;
+  display_name: string;
+  uploaded_at: Date;
+  mime_type: string;
+  size_bytes: number;
+  folder_id: number | null;
+  trashed_at?: Date | null;
+}) => {
+  const trashedAt = item.trashed_at ?? null;
+  const expiresAt = trashedAt ? new Date(trashedAt.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+
+  return {
+    itemId: item.photo_id,
+    thumbnailUrl: toMediaUrl(spaceId, item.thumbnail_path),
+    fileUrl: toMediaUrl(spaceId, item.file_path),
+    displayName: item.display_name,
+    uploadedAt: item.uploaded_at,
+    mimeType: item.mime_type,
+    sizeBytes: item.size_bytes,
+    folderId: item.folder_id,
+    trashedAt,
+    expiresAt,
+  };
+};
 
 const generateVideoThumbnail = async ({
   inputPath,
@@ -188,30 +234,11 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
       parentId: f.parent_id,
     });
 
-    const toItem = (item: {
-      photo_id: string;
-      thumbnail_path: string;
-      file_path: string;
-      display_name: string;
-      uploaded_at: Date;
-      mime_type: string;
-      size_bytes: number;
-      folder_id: number | null;
-    }) => ({
-      itemId: item.photo_id,
-      thumbnailUrl: `/uploads/${item.thumbnail_path}`,
-      fileUrl: `/uploads/${item.file_path}`,
-      displayName: item.display_name,
-      uploadedAt: item.uploaded_at,
-      mimeType: item.mime_type,
-      sizeBytes: item.size_bytes,
-    });
-
     res.json({
       currentFolder: currentFolder ? toFolder(currentFolder) : null,
       breadcrumbs: breadcrumbs.map(toFolder),
       folders: folders.map(toFolder),
-      items: rawItems.map(toItem),
+      items: rawItems.map((item) => toItemResponse(spaceId, item)),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
@@ -240,17 +267,51 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
   try {
     const rawItems = await getItemsInFolderSince({ spaceId, folderId, since: req.since });
     const items = rawItems.map((item) => ({
-      itemId: item.photo_id,
-      thumbnailUrl: `/uploads/${item.thumbnail_path}`,
-      fileUrl: `/uploads/${item.file_path}`,
-      displayName: item.display_name,
-      uploadedAt: item.uploaded_at,
-      mimeType: item.mime_type,
-      sizeBytes: item.size_bytes,
+      ...toItemResponse(spaceId, item),
       updated_at: item.updated_at,
-      deleted: item.deleted,
+      deleted: item.deleted || item.trashed_at != null,
     }));
     res.json({ items });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/media/:kind/:filename — authenticated media delivery
+router.get('/media/:kind/:filename', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const { kind, filename } = req.params as { kind?: string; filename?: string };
+
+  if (!spaceId || !kind || !filename) {
+    res.status(400).json({ error: 'Invalid media request' });
+    return;
+  }
+
+  if (!['originals', 'thumbnails'].includes(kind) || filename !== path.basename(filename)) {
+    res.status(400).json({ error: 'Invalid media path' });
+    return;
+  }
+
+  const mediaPath = path.join('spaces', String(spaceId), kind, filename);
+
+  try {
+    const item = await getItemByMediaPath({ spaceId, mediaPath });
+    if (!item) {
+      res.status(404).json({ error: 'Media not found' });
+      return;
+    }
+    const uploadsRoot = path.resolve(UPLOADS_ROOT);
+    const absolutePath = path.resolve(uploadsRoot, mediaPath);
+    if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
+      res.status(400).json({ error: 'Invalid media path' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.sendFile(absolutePath, (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'Media not found' });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
@@ -281,6 +342,104 @@ router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
       hashes,
     });
     res.json({ existingHashes });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/trash — list recoverable trashed items for space members
+router.get('/trash', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  try {
+    await purgeExpiredSpaceTrash({ spaceId });
+    const trash = await getTrashedItems({ spaceId });
+    res.json({ items: trash.map((item) => toItemResponse(spaceId, item)) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /spaces/:spaceId/trash/:itemId/restore — restore an item to its original folder
+router.post('/trash/:itemId/restore', authenticate, isMember, async (req, res) => {
+  if (!canManageTrash(req.member.role)) {
+    res.status(403).json({ error: 'Only admins and moderators can restore trash' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  try {
+    const item = await restoreSpaceItemFromTrash({ spaceId, itemId });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found in trash' });
+      return;
+    }
+    res.json({ item: toItemResponse(spaceId, item) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// DELETE /spaces/:spaceId/trash/:itemId — permanently delete one trashed item
+router.delete('/trash/:itemId', authenticate, isMember, async (req, res) => {
+  if (!canManageTrash(req.member.role)) {
+    res.status(403).json({ error: 'Only admins and moderators can permanently delete trash' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  try {
+    const deleted = await permanentlyDeleteTrashedSpaceItem({ spaceId, itemId });
+    if (!deleted) {
+      res.status(404).json({ error: 'Item not found in trash' });
+      return;
+    }
+    res.json({ message: 'Item permanently deleted' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// DELETE /spaces/:spaceId/trash — permanently delete all trashed items
+router.delete('/trash', authenticate, isMember, async (req, res) => {
+  if (!canManageTrash(req.member.role)) {
+    res.status(403).json({ error: 'Only admins and moderators can empty trash' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  try {
+    const deletedCount = await emptySpaceTrash({ spaceId });
+    res.json({ message: 'Trash emptied', deletedCount });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
@@ -359,6 +518,125 @@ router.post('/items/:itemId/like', authenticate, isMember, async (req, res) => {
     const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
     const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
     res.json(likeInfo);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// PATCH /spaces/:spaceId/items/:itemId/rename — rename an item (contributor+)
+router.patch('/items/:itemId/rename', authenticate, isMember, async (req, res) => {
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can rename items' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+  const displayNameRaw = (req.body as { displayName?: unknown }).displayName;
+  const displayName = typeof displayNameRaw === 'string' ? displayNameRaw.trim() : '';
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+  if (!displayName) {
+    res.status(400).json({ error: 'displayName is required' });
+    return;
+  }
+
+  try {
+    const item = await renameSpaceItem({ spaceId, itemId, displayName });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+    res.json({ item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// PATCH /spaces/:spaceId/items/:itemId/move — move an item to another folder/root (contributor+)
+router.patch('/items/:itemId/move', authenticate, isMember, async (req, res) => {
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can move items' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+  const folderIdRaw = (req.body as { folderId?: unknown }).folderId;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  let folderId: number | null = null;
+  if (folderIdRaw != null) {
+    if (typeof folderIdRaw !== 'number' || !Number.isFinite(folderIdRaw)) {
+      res.status(400).json({ error: 'folderId must be a number or null' });
+      return;
+    }
+    const folder = await getFolderById(folderIdRaw);
+    if (!folder || folder.space_id !== spaceId || folder.deleted) {
+      res.status(404).json({ error: 'Target folder not found in this space' });
+      return;
+    }
+    folderId = folderIdRaw;
+  }
+
+  try {
+    const current = await getItemById({ spaceId, itemId });
+    if (!current) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+
+    if (current.folder_id === folderId) {
+      res.json({ item: current });
+      return;
+    }
+
+    const item = await moveSpaceItem({ spaceId, itemId, folderId });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+    res.json({ item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// DELETE /spaces/:spaceId/items/:itemId — move an item to trash (moderator+)
+router.delete('/items/:itemId', authenticate, isMember, async (req, res) => {
+  if (!canManageTrash(req.member.role)) {
+    res.status(403).json({ error: 'Only admins and moderators can move items to trash' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  try {
+    const item = await moveSpaceItemToTrash({ spaceId, itemId });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+    res.json({ message: 'Item moved to trash', item: toItemResponse(spaceId, item) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

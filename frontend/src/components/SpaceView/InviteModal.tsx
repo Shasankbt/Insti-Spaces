@@ -1,27 +1,51 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Modal from './Modal';
 import { inviteToSpace, generateSpaceInviteLink } from '../../Api';
-import { INVITE_ROLES } from '../../constants';
-import type { Space, Role } from '../../types';
+import { INVITE_ROLES, POLL_INTERVAL } from '../../constants';
+import { useDeltaSync } from '../../hooks/useDeltaSync';
+import type { Space, Role, Friend, Member } from '../../types';
 
 interface InviteModalProps {
   space: Space;
   token: string;
+  members: Member[];
   onClose: () => void;
   onInviteSuccess?: () => void;
 }
 
-export default function InviteModal({ space, token, onClose, onInviteSuccess }: InviteModalProps) {
-  const [tab, setTab] = useState<'username' | 'link'>('username');
+export default function InviteModal({
+  space,
+  token,
+  members,
+  onClose,
+  onInviteSuccess,
+}: InviteModalProps) {
+  const [tab, setTab] = useState<'username' | 'friends' | 'link'>('username');
   const [username, setUsername] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('viewer');
   const [inviting, setInviting] = useState(false);
+  const [invitingFriendId, setInvitingFriendId] = useState<number | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  const {
+    data: friends,
+    loading: friendsLoading,
+    error: friendsError,
+  } = useDeltaSync<Friend>('http://localhost:3000/friends', {
+    token,
+    interval: POLL_INTERVAL,
+    pause: tab !== 'friends',
+  });
+
+  const inviteableFriends = useMemo(() => {
+    const memberIds = new Set(members.map((member) => member.userid));
+    return friends.filter((friend) => !memberIds.has(friend.id));
+  }, [friends, members]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +64,22 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }: 
       setInviteError(apiErr?.error ?? 'Failed to invite');
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleInviteFriend = async (friend: Friend) => {
+    setInviteError(null);
+    setInviteSuccess(null);
+    try {
+      setInvitingFriendId(friend.id);
+      await inviteToSpace({ spaceId: space.id, userId: friend.id, role: inviteRole, token });
+      setInviteSuccess(`${friend.username} invited as ${inviteRole}!`);
+      if (onInviteSuccess) onInviteSuccess();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
+      setInviteError(apiErr?.error ?? 'Failed to invite');
+    } finally {
+      setInvitingFriendId(null);
     }
   };
 
@@ -83,6 +123,12 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }: 
           By Username
         </button>
         <button
+          className={`modal__tab ${tab === 'friends' ? 'modal__tab--active' : ''}`}
+          onClick={() => setTab('friends')}
+        >
+          Friends
+        </button>
+        <button
           className={`modal__tab ${tab === 'link' ? 'modal__tab--active' : ''}`}
           onClick={() => setTab('link')}
         >
@@ -119,6 +165,50 @@ export default function InviteModal({ space, token, onClose, onInviteSuccess }: 
           {inviteError && <p className="modal__error">{inviteError}</p>}
           {inviteSuccess && <p className="modal__success">{inviteSuccess}</p>}
         </form>
+      )}
+
+      {tab === 'friends' && (
+        <div className="modal__friends-panel">
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value as Role)}
+            className="modal__input"
+          >
+            {INVITE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+
+          {friendsLoading && <p className="modal__empty">Loading friends…</p>}
+          {friendsError && <p className="modal__error">{friendsError}</p>}
+          {!friendsLoading && !friendsError && inviteableFriends.length === 0 && (
+            <p className="modal__empty">No friends to invite yet.</p>
+          )}
+          {inviteableFriends.length > 0 && (
+            <div className="modal__friends-list">
+              {inviteableFriends.map((friend) => (
+                <div key={friend.id} className="modal__friend-row">
+                  <div>
+                    <div className="modal__friend-name">{friend.username}</div>
+                    <div className="modal__friend-meta">Friend</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal__btn modal__btn--primary"
+                    onClick={() => void handleInviteFriend(friend)}
+                    disabled={invitingFriendId !== null}
+                  >
+                    {invitingFriendId === friend.id ? 'Inviting…' : 'Invite'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {inviteError && <p className="modal__error">{inviteError}</p>}
+          {inviteSuccess && <p className="modal__success">{inviteSuccess}</p>}
+        </div>
       )}
 
       {tab === 'link' && (

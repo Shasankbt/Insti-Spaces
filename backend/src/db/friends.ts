@@ -13,7 +13,7 @@ const areFriends = async ({
 }): Promise<boolean> => {
   const { rows } = await pool.query(
     `SELECT 1 FROM friends
-     WHERE fid = LEAST($1, $2) AND sid = GREATEST($1, $2) LIMIT 1`,
+     WHERE fid = LEAST($1::int, $2::int) AND sid = GREATEST($1::int, $2::int) LIMIT 1`,
     [userAId, userBId],
   );
   return rows.length > 0;
@@ -80,7 +80,7 @@ export const acceptFriendRequest = async ({
 
     await client.query(
       `INSERT INTO friends (fid, sid)
-       VALUES (LEAST($1, $2), GREATEST($1, $2)) ON CONFLICT DO NOTHING`,
+       VALUES (LEAST($1::int, $2::int), GREATEST($1::int, $2::int)) ON CONFLICT DO NOTHING`,
       [updated[0].from_user_id, updated[0].to_user_id],
     );
 

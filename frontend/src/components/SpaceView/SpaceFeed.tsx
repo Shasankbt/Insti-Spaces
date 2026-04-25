@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSpacePageView, likeSpaceItem } from '../../Api';
+import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import type { SpacePhoto } from '../../types';
-
-const API_BASE = 'http://localhost:3000';
 
 interface SpaceFeedProps {
   spaceId: number;
   token: string;
 }
-
-const toAbsoluteUrl = (url: string): string =>
-  url.startsWith('http://') || url.startsWith('https://') ? url : `${API_BASE}${url}`;
 
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
 
@@ -267,8 +263,9 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               className="space-feed__link"
               onClick={() => setActiveIndex(index)}
             >
-              <img
-                src={toAbsoluteUrl(photo.thumbnailUrl)}
+              <AuthenticatedImage
+                src={photo.thumbnailUrl}
+                token={token}
                 alt={photo.displayName}
                 loading="lazy"
                 className="space-feed__thumb"
@@ -320,8 +317,9 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                 aria-label="Next image"
               />
               {isVideoMime(activePhoto.mimeType) ? (
-                <video
-                  src={toAbsoluteUrl(activePhoto.fileUrl)}
+                <AuthenticatedVideo
+                  src={activePhoto.fileUrl}
+                  token={token}
                   className="space-feed__lightbox-video"
                   controls
                   controlsList="nofullscreen"
@@ -341,8 +339,9 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                   onTouchEnd={handleMediaTouchEnd}
                 />
               ) : (
-                <img
-                  src={toAbsoluteUrl(activePhoto.fileUrl)}
+                <AuthenticatedImage
+                  src={activePhoto.fileUrl}
+                  token={token}
                   alt={activePhoto.displayName}
                   className="space-feed__lightbox-image"
                   onDoubleClick={() => {

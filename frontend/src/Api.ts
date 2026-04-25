@@ -271,3 +271,78 @@ export const likeSpaceItem = ({
     {},
     authHeaders(token),
   );
+
+export const renameSpaceItem = ({
+  spaceId,
+  itemId,
+  displayName,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  displayName: string;
+  token: string;
+}) =>
+  axios.patch(
+    `${API}/spaces/${spaceId}/items/${itemId}/rename`,
+    { displayName },
+    authHeaders(token),
+  );
+
+export const moveSpaceItem = ({
+  spaceId,
+  itemId,
+  folderId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  folderId: number | null;
+  token: string;
+}) =>
+  axios.patch(
+    `${API}/spaces/${spaceId}/items/${itemId}/move`,
+    { folderId },
+    authHeaders(token),
+  );
+
+export const deleteSpaceItem = ({
+  spaceId,
+  itemId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  token: string;
+}) => axios.delete(`${API}/spaces/${spaceId}/items/${itemId}`, authHeaders(token));
+
+export const getSpaceTrash = ({ spaceId, token }: { spaceId: number; token: string }) =>
+  axios.get<{ items: SpaceItem[] }>(`${API}/spaces/${spaceId}/trash`, authHeaders(token));
+
+export const restoreSpaceTrashItem = ({
+  spaceId,
+  itemId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  token: string;
+}) =>
+  axios.post<{ item: SpaceItem }>(
+    `${API}/spaces/${spaceId}/trash/${itemId}/restore`,
+    {},
+    authHeaders(token),
+  );
+
+export const permanentlyDeleteSpaceTrashItem = ({
+  spaceId,
+  itemId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  token: string;
+}) => axios.delete(`${API}/spaces/${spaceId}/trash/${itemId}`, authHeaders(token));
+
+export const emptySpaceTrash = ({ spaceId, token }: { spaceId: number; token: string }) =>
+  axios.delete(`${API}/spaces/${spaceId}/trash`, authHeaders(token));
