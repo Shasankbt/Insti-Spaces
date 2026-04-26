@@ -2,16 +2,6 @@
 
 _Last updated: 2026-04-26_
 
-This page tracks currently known issues in **Insti-Spaces** so contributors and testers have a single place to check before filing duplicates.
-
-## How to read this page
-
-- **Severity**: Critical / High / Medium / Low
-- **Status**: Open / In Progress / Needs Discussion / Planned
-- **Workaround**: Temporary user/developer workaround if available
-
----
-
 ## 1) Empty folders are not included in ZIP downloads
 
 - **Area**: Downloading Items
@@ -92,8 +82,3 @@ This page tracks currently known issues in **Insti-Spaces** so contributors and 
 
 ---
 
-## Triage notes
-
-- Please convert each bug above into a tracked GitHub issue (one bug = one issue) with steps to reproduce.
-- Add labels such as: `bug`, `backend`, `frontend`, `needs-repro`, `priority:<level>`.
-- Keep this document synced with issue status changes.
