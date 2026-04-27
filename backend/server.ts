@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import app from './src/app';
 import { purgeExpiredTrash } from './src/db/spaceItems';
+import { TRASH } from './src/config';
 
 console.log('DB:', process.env.DB_NAME);
 console.log('ENV FILE PATH:', process.cwd());
@@ -19,4 +20,4 @@ const runTrashCleanup = async (): Promise<void> => {
 void runTrashCleanup();
 setInterval(() => {
   void runTrashCleanup();
-}, 60 * 60 * 1000);
+}, TRASH.CLEANUP_INTERVAL_MS);

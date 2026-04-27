@@ -16,9 +16,7 @@ import type { ExplorerFolder, Role, Space, SpaceItem } from '../../types';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
-import { API_BASE, POLL_INTERVAL } from '../../constants';
-
-const TRASH_LIMIT = 50;
+import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL, TRASH_LIMIT } from '../../constants';
 
 interface SpaceExplorerProps {
   space: Space;
@@ -333,7 +331,7 @@ export default function SpaceExplorer({
     token,
     interval: POLL_INTERVAL,
     idKey: 'itemId',
-    pageSize: 50,
+    pageSize: EXPLORER_PAGE_SIZE,
   });
 
   const {

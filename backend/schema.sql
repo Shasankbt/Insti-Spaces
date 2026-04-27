@@ -193,3 +193,10 @@ FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 CREATE TRIGGER space_items_updated_at
 BEFORE UPDATE ON space_items
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE INDEX idx_following_userid ON following (userid) WHERE deleted = false;
+CREATE INDEX idx_space_items_trashed ON space_items (trashed_at) WHERE deleted = false AND trashed_at IS NOT NULL;
+CREATE INDEX idx_space_items_media_path ON space_items (space_id, file_path, thumbnail_path);
+CREATE INDEX idx_role_requests_spaceid_status ON role_requests (space_id, status) WHERE deleted = false;
+CREATE INDEX idx_users_username_pattern ON users (username varchar_pattern_ops);
+CREATE INDEX idx_friend_requests_users ON friend_requests (from_user_id, to_user_id) WHERE status = 'pending';

@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { authenticate } from '../middleware';
 import { createUser, findUserByEmail, findUserById } from '../db';
+import { AUTH } from '../config';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ router.post('/register', async (req, res) => {
     const existing = await findUserByEmail(email);
     if (existing) return res.status(409).json({ error: 'Email already in use' });
 
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, AUTH.BCRYPT_COST);
     const user = await createUser(username, email, hash);
     res.status(201).json({ user });
   } catch (err) {
@@ -44,7 +45,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET as string,
-      { expiresIn: '7d' },
+      { expiresIn: AUTH.JWT_EXPIRY },
     );
     res.json({ token, user: { id: user.id, username: user.username } });
   } catch (err) {

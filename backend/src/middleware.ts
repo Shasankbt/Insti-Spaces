@@ -55,6 +55,7 @@ import multer, { StorageEngine } from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { UPLOAD } from './config';
 
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
@@ -72,5 +73,5 @@ const storage: StorageEngine = multer.diskStorage({
 
 export const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: UPLOAD.MAX_FILE_BYTES },
 });

@@ -1,5 +1,6 @@
 import pool, { withTransaction } from './pool';
 import type { FriendRequest, Friend } from '../types';
+import { PAGE } from '../config';
 
 const apiError = (message: string, statusCode: number) =>
   Object.assign(new Error(message), { statusCode });
@@ -89,14 +90,14 @@ export const acceptFriendRequest = async ({
 
 export const listFriends = async ({
   userId,
-  limit = 200,
+  limit = PAGE.FRIENDS_DEFAULT,
   since = new Date(0),
 }: {
   userId: number;
   limit?: number;
   since?: Date;
 }): Promise<Friend[]> => {
-  const finalLimit = Math.min(Math.max(limit, 1), 500);
+  const finalLimit = Math.min(Math.max(limit, 1), PAGE.FRIENDS_MAX);
   const { rows } = await pool.query<Friend>(
     `SELECT u.id, u.username, fr.responded_at AS updated_at
      FROM friends f
@@ -114,14 +115,14 @@ export const listFriends = async ({
 
 export const listNotifications = async ({
   userId,
-  limit = 50,
+  limit = PAGE.NOTIFICATIONS_DEFAULT,
   since = new Date(0),
 }: {
   userId: number;
   limit?: number;
   since?: Date;
 }): Promise<unknown[]> => {
-  const finalLimit = Math.min(Math.max(limit, 1), 200);
+  const finalLimit = Math.min(Math.max(limit, 1), PAGE.NOTIFICATIONS_MAX);
   const { rows } = await pool.query(
     `SELECT * FROM (
        SELECT

@@ -7,6 +7,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import archiver from 'archiver';
 import rateLimit from 'express-rate-limit';
 import { authenticate, deltaSync, isMember, upload } from '../middleware';
+import { PAGE, RATE, TRASH, UPLOAD } from '../config';
 import {
   addSpaceItem,
   getExistingContentHashes,
@@ -47,8 +48,8 @@ const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'
 const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
 
 const uploadLimiter = rateLimit({
-  windowMs: 60 * 60_000,
-  limit: 20,
+  windowMs: RATE.UPLOAD_WINDOW_MS,
+  limit: RATE.UPLOAD_MAX,
   message: { error: 'Upload rate limit exceeded, try again in an hour' },
   standardHeaders: 'draft-8',
   legacyHeaders: false,
@@ -72,7 +73,7 @@ const toItemResponse = (spaceId: number, item: {
   trashed_at?: Date | null;
 }) => {
   const trashedAt = item.trashed_at ?? null;
-  const expiresAt = trashedAt ? new Date(trashedAt.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+  const expiresAt = trashedAt ? new Date(trashedAt.getTime() + TRASH.EXPIRY_DAYS * 24 * 60 * 60 * 1000) : null;
 
   return {
     itemId: item.photo_id,
@@ -97,7 +98,7 @@ const generateVideoThumbnail = async ({
 }): Promise<void> =>
   new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      .outputOptions(['-vf', 'thumbnail,scale=320:-1', '-frames:v', '1'])
+      .outputOptions(['-vf', `thumbnail,scale=${UPLOAD.THUMB_PX}:-1`, '-frames:v', '1'])
       .output(outputPath)
       .on('end', () => resolve())
       .on('error', (err) => reject(err))
@@ -179,8 +180,8 @@ const handleUpload = async (req: Request, res: Response) => {
           await generateVideoThumbnail({ inputPath: file.path, outputPath: thumbnailAbsPath });
         } else {
           await sharp(file.path)
-            .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 80 })
+            .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: UPLOAD.THUMB_QUALITY })
             .toFile(thumbnailAbsPath);
         }
 
@@ -272,7 +273,7 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
 
   const cursorRaw = req.query.cursor as string | undefined;
   const limitRaw = req.query.limit as string | undefined;
-  const limit = Math.min(Number(limitRaw) || 50, 200);
+  const limit = Math.min(Number(limitRaw) || PAGE.ITEMS_DEFAULT, PAGE.ITEMS_MAX);
   const isInitialLoad = req.since.getTime() === 0;
 
   try {
@@ -350,7 +351,7 @@ router.get('/media/:kind/:filename', authenticate, isMember, async (req, res) =>
 });
 
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
-router.post('/upload', authenticate, isMember, uploadLimiter, upload.array('items', 20), handleUpload);
+router.post('/upload', authenticate, isMember, uploadLimiter, upload.array('items', UPLOAD.MAX_FILES), handleUpload);
 
 // POST /spaces/:spaceId/items/hash-check — return already-existing content hashes in this space
 router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
@@ -387,7 +388,7 @@ router.get('/trash', authenticate, isMember, async (req, res) => {
     return;
   }
 
-  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const limit = Math.min(Number(req.query.limit) || PAGE.TRASH_DEFAULT, PAGE.TRASH_MAX);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
 
   try {

@@ -1,5 +1,6 @@
 import pool from './pool';
 import type { SpaceItem } from '../types';
+import { PAGE, TRASH } from '../config';
 
 export const addSpaceItem = async ({
   spaceId,
@@ -86,7 +87,7 @@ export const getSpaceItemsForPageView = async ({
 export const getItemsInFolderPage = async ({
   spaceId,
   folderId,
-  limit = 50,
+  limit = PAGE.ITEMS_DEFAULT,
   cursor = null,
 }: {
   spaceId: number;
@@ -94,7 +95,7 @@ export const getItemsInFolderPage = async ({
   limit?: number;
   cursor?: { at: string; id: string } | null;
 }): Promise<{ rows: SpaceItem[]; nextCursor: { at: string; id: string } | null }> => {
-  const cap = Math.min(Math.max(limit, 1), 200);
+  const cap = Math.min(Math.max(limit, 1), PAGE.ITEMS_MAX);
   const fetch = cap + 1;
   let rows: SpaceItem[];
 
@@ -154,14 +155,14 @@ export const getItemsInFolderSince = async ({
 
 export const getTrashedItems = async ({
   spaceId,
-  limit = 50,
+  limit = PAGE.TRASH_DEFAULT,
   offset = 0,
 }: {
   spaceId: number;
   limit?: number;
   offset?: number;
 }): Promise<{ rows: SpaceItem[]; hasMore: boolean }> => {
-  const cap = Math.min(Math.max(limit, 1), 200);
+  const cap = Math.min(Math.max(limit, 1), PAGE.TRASH_MAX);
   const { rows } = await pool.query<SpaceItem>(
     `SELECT * FROM space_items
      WHERE space_id = $1
@@ -355,7 +356,7 @@ export const purgeExpiredTrash = async (): Promise<number> => {
      SET deleted = true
      WHERE deleted = false
        AND trashed_at IS NOT NULL
-       AND trashed_at <= NOW() - INTERVAL '7 days'`,
+       AND trashed_at <= NOW() - (${TRASH.EXPIRY_DAYS} * INTERVAL '1 day')`,
   );
   return rowCount ?? 0;
 };
@@ -371,7 +372,7 @@ export const purgeExpiredSpaceTrash = async ({
      WHERE space_id = $1
        AND deleted = false
        AND trashed_at IS NOT NULL
-       AND trashed_at <= NOW() - INTERVAL '7 days'`,
+       AND trashed_at <= NOW() - (${TRASH.EXPIRY_DAYS} * INTERVAL '1 day')`,
     [spaceId],
   );
   return rowCount ?? 0;
