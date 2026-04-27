@@ -4,19 +4,17 @@ import jwt from 'jsonwebtoken';
 import { authenticate } from '../middleware';
 import { createUser, findUserByEmail, findUserById } from '../db';
 import { AUTH } from '../config';
+import { validateLoginBody, validateRegisterBody } from '../validation';
 
 const router = Router();
 
 router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body as {
-    username?: string;
-    email?: string;
-    password?: string;
-  };
+  const parsed = validateRegisterBody(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error });
+  }
 
-  if (!username || username === '') return res.status(409).json({ error: 'empty username not allowed' });
-  if (!email || email === '') return res.status(409).json({ error: 'empty email not allowed' });
-  if (!password || password === '') return res.status(409).json({ error: 'empty password not allowed' });
+  const { username, email, password } = parsed.data;
 
   try {
     const existing = await findUserByEmail(email);
@@ -32,10 +30,14 @@ router.post('/register', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body as { email?: string; password?: string };
-  try {
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  const parsed = validateLoginBody(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error });
+  }
 
+  const { email, password } = parsed.data;
+
+  try {
     const user = await findUserByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 

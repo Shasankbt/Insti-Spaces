@@ -10,7 +10,10 @@ import { RATE } from './config';
 const app = express();
 
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:5173' }));
+app.use(cors({
+  origin: 'http://localhost:5173',
+  exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
+}));
 
 app.use(rateLimit({
   windowMs: RATE.GLOBAL_WINDOW_MS,

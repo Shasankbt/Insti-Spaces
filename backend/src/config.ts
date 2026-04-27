@@ -17,8 +17,8 @@ export const RATE = {
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 export const UPLOAD = {
-  MAX_FILES:       20,                 // files per request
-  MAX_FILE_BYTES:  50 * 1024 * 1024,  // 50 MB per file
+  MAX_FILES:       200,                 // files per request
+  MAX_FILE_BYTES:  500 * 1024 * 1024,  // 500 MB per file
   THUMB_PX:        320,               // thumbnail bounding box (px)
   THUMB_QUALITY:   80,                // WebP quality 0-100
 } as const;
@@ -49,4 +49,17 @@ export const TRASH = {
 export const AUTH = {
   BCRYPT_COST: 10,
   JWT_EXPIRY:  '7d',
+} as const;
+
+// ── Input validation ─────────────────────────────────────────────────────────
+
+export const VALIDATION = {
+  USERNAME_MIN: 1,
+  USERNAME_MAX: 50,
+  EMAIL_MAX: 255,
+  PASSWORD_MIN: 8,
+  PASSWORD_MAX: 128,
+  SPACENAME_MIN: 1,
+  SPACENAME_MAX: 50,
+  CONTENT_HASH_HEX_LEN: 64,
 } as const;

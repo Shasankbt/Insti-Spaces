@@ -97,6 +97,32 @@ export const getFolderAncestors = async (
   return rows.reverse();
 };
 
+export const getFolderSubtreePaths = async ({
+  spaceId,
+  folderIds,
+}: {
+  spaceId: number;
+  folderIds: number[];
+}): Promise<Array<{ id: number; folder_path: string }>> => {
+  if (folderIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `WITH RECURSIVE subtree AS (
+       SELECT id, name, parent_id, name::text AS folder_path
+       FROM space_folders
+       WHERE id = ANY($2::int[]) AND space_id = $1 AND deleted = false
+       UNION ALL
+       SELECT f.id, f.name, f.parent_id,
+              subtree.folder_path || '/' || f.name
+       FROM space_folders f
+       JOIN subtree ON f.parent_id = subtree.id
+       WHERE f.space_id = $1 AND f.deleted = false
+     )
+     SELECT id, folder_path FROM subtree`,
+    [spaceId, folderIds],
+  );
+  return rows as Array<{ id: number; folder_path: string }>;
+};
+
 export const getFolderSubtreeItems = async ({
   spaceId,
   folderIds,

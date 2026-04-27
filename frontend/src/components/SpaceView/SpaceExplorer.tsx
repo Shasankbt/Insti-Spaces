@@ -400,7 +400,6 @@ export default function SpaceExplorer({
       isMountMeta.current = false;
       return;
     }
-    void refreshItems();
     void refreshFolders();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderPath]);

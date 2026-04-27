@@ -1,36 +1,6 @@
 # Known Bugs
 
-_Last updated: 2026-04-26_
-
-## 1) Empty folders are not included in ZIP downloads
-
-- **Area**: Downloading Items
-- **Severity**: Medium
-- **Status**: Open
-- **Description**: Empty directories are skipped when exporting/downloading content as ZIP.
-- **Impact**: Folder structure is incomplete after download.
-- **Workaround**: Add a placeholder file before download.
-- **Suggested fix**: Ensure ZIP generation explicitly writes empty directory entries.
-
-## 2) Duplicate folder names create UI duplication/confusion
-
-- **Area**: Folder Management / UI Rendering
-- **Severity**: Medium
-- **Status**: Open
-- **Description**: Multiple folders with the same name can be created, causing confusing duplicate entries in the UI.
-- **Impact**: Users cannot reliably distinguish folders by name alone.
-- **Workaround**: Use unique folder names manually.
-- **Suggested fix**: Add disambiguation (ID/path hints) in UI and/or enforce uniqueness per parent folder.
-
-## 3) Photos sometimes appear in root folder incorrectly
-
-- **Area**: File Listing / Root View
-- **Severity**: High
-- **Status**: Open
-- **Description**: Photos occasionally appear in the root folder even when root should be empty.
-- **Impact**: Misleading file visibility and potential accidental actions on misplaced items.
-- **Workaround**: Refresh and navigate into target folder to verify true location.
-- **Suggested fix**: Audit folder filtering/query logic and cache invalidation for root listing.
+_Last updated: 2026-04-28_
 
 ## 4) "Select and move to trash" flow is incomplete
 
@@ -50,16 +20,6 @@ _Last updated: 2026-04-26_
 - **Impact**: Lower usability for organizing content.
 - **Workaround**: Use existing move action flow (if available).
 
-## 6) `deleted` flag is not set to `true` after trashing an item
-
-- **Area**: Backend Schema (`space_items`)
-- **Severity**: Critical
-- **Status**: Open
-- **Description**: Trashed items do not always update the `deleted` field in `space_items`.
-- **Impact**: Data inconsistency; trashed items may still appear or behave as active.
-- **Workaround**: None reliable.
-- **Suggested fix**: Verify trash handler write path and transaction/ORM update logic.
-
 ## 7) Upload Model exploding with no of photoes
 
 - **Area**: Uploading Items
@@ -70,15 +30,24 @@ _Last updated: 2026-04-26_
 - **Workaround**: use cntrl - to find upload button.
 - **Suggested direction**: implement a scroll feature and or just don't display all photoes in the upload model
 
-## 8) Upload error handling is not comprehensive
+## 8) Video Seeking Delay Due to Full Blob Download
+
+- **Area**: Media Playback (Video)
+- **Severity**: High
+- **Status**: Working 
+- **Description**: Videos are fetched as full blobs using fetch() and URL.createObjectURL() instead of being streamed directly. This prevents native browser range requests, causing delays when seeking to later parts of large videos.
+- **Impact**: Poor user experience for large videos (e.g., 300MB+), high bandwidth usage, and inefficient playback behavior.
+- **Workaround**: Wait for the entire video to download before seeking (not practical).
+- **Suggested direction**: Avoid blob-based playback. Use direct video URLs with signed URLs or cookie-based authentication so the browser can perform byte-range streaming (206 Partial Content).
+
+## 9) Upload error handling is not comprehensive
 
 - **Area**: Uploading Items / Error UX
 - **Severity**: Medium
-- **Status**: In Progress (monitoring)
-- **Description**: Team has not encountered many upload failures yet, but robust error handling is incomplete.
+- **Status**: Will see in future
+- **Description**: We have not encountered many upload failures yet, but robust error handling is incomplete.
 - **Impact**: Poor resilience when network/storage errors occur.
 - **Workaround**: Retry upload.
 - **Suggested fix**: Add retry strategy, error toasts, and server-side error mapping.
 
 ---
-

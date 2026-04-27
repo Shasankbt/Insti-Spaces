@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate, isMember, deltaSync } from '../middleware';
-import { createFolder, getSpaceFolders, getFolderById } from '../db/spaceFolders';
+import { createFolder, getSpaceFolders, getFolderById, getFolderByName } from '../db/spaceFolders';
 
 const router = Router({ mergeParams: true });
 
@@ -29,12 +29,21 @@ router.post('/folders', authenticate, isMember, async (req, res) => {
     }
   }
 
+  const trimmedName = name.trim();
+  const parentId = parent_id ?? null;
+
+  const existing = await getFolderByName({ spaceId, name: trimmedName, parentId });
+  if (existing) {
+    res.status(409).json({ error: 'A folder with that name already exists here' });
+    return;
+  }
+
   try {
     const folder = await createFolder({
       spaceId,
       createdBy: req.user.id,
-      name: name.trim(),
-      parentId: parent_id ?? null,
+      name: trimmedName,
+      parentId,
     });
     res.status(201).json({ folder });
   } catch (err: unknown) {

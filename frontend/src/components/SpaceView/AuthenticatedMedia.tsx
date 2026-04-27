@@ -6,7 +6,7 @@ const API_BASE = 'http://localhost:3000';
 const toAbsoluteUrl = (url: string): string =>
   url.startsWith('http://') || url.startsWith('https://') ? url : `${API_BASE}${url}`;
 
-function useAuthenticatedObjectUrl(src: string, token: string): string | null {
+function useAuthenticatedImageObjectUrl(src: string, token: string): string | null {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ type AuthenticatedImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> 
 };
 
 export function AuthenticatedImage({ src, token, ...props }: AuthenticatedImageProps) {
-  const objectUrl = useAuthenticatedObjectUrl(src, token);
+  const objectUrl = useAuthenticatedImageObjectUrl(src, token);
   return <img {...props} src={objectUrl ?? undefined} />;
 }
 
@@ -57,6 +57,8 @@ type AuthenticatedVideoProps = Omit<VideoHTMLAttributes<HTMLVideoElement>, 'src'
 };
 
 export function AuthenticatedVideo({ src, token, ...props }: AuthenticatedVideoProps) {
-  const objectUrl = useAuthenticatedObjectUrl(src, token);
-  return <video {...props} src={objectUrl ?? undefined} />;
+  const absoluteSrc = toAbsoluteUrl(src);
+  const url = new URL(absoluteSrc);
+  url.searchParams.set('t', token);
+  return <video {...props} src={url.toString()} />;
 }

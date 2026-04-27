@@ -7,15 +7,9 @@ import {
   getLikeSummaryForItems,
 } from '../db';
 import { parseSpaceId } from './spacesHelpers';
-import path from 'path';
+import { toMediaUrl } from '../utils/media';
 
 const router = Router({ mergeParams: true });
-
-const toMediaUrl = (spaceId: number, storagePath: string): string => {
-  const kind = path.basename(path.dirname(storagePath));
-  const filename = path.basename(storagePath);
-  return `/spaces/${spaceId}/media/${kind}/${encodeURIComponent(filename)}`;
-};
 
 // GET /spaces/:spaceId — get space details
 router.get('/', authenticate, isMember, async (req, res) => {

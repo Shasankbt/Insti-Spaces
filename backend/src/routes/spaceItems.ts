@@ -33,8 +33,11 @@ import {
   getFolderByName,
   getFolderById,
   getFolderSubtreeItems,
+  getFolderSubtreePaths,
 } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
+import { validateContentHashes } from '../validation';
+import { toMediaUrl } from '../utils/media';
 
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
@@ -44,6 +47,7 @@ if (ffmpegStatic) {
 }
 
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
+const isMediaMime = (mimeType: string): boolean => mimeType.startsWith('image/') || mimeType.startsWith('video/');
 const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
 const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
 
@@ -54,12 +58,6 @@ const uploadLimiter = rateLimit({
   standardHeaders: 'draft-8',
   legacyHeaders: false,
 });
-
-const toMediaUrl = (spaceId: number, storagePath: string): string => {
-  const kind = path.basename(path.dirname(storagePath));
-  const filename = path.basename(storagePath);
-  return `/spaces/${spaceId}/media/${kind}/${encodeURIComponent(filename)}`;
-};
 
 const toItemResponse = (spaceId: number, item: {
   photo_id: string;
@@ -105,6 +103,100 @@ const generateVideoThumbnail = async ({
       .run();
   });
 
+// Remux MP4 so the moov atom is at the front, enabling instant seeking via range requests.
+// Uses stream copy (no re-encode), so it's fast regardless of file size.
+const applyMp4Faststart = async (inputPath: string): Promise<void> => {
+  const tmpPath = `${inputPath}.faststart.tmp`;
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions(['-movflags', '+faststart', '-c', 'copy'])
+      .output(tmpPath)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
+      .run();
+  });
+  await fs.rename(tmpPath, inputPath);
+};
+
+const startsWith = (bytes: Uint8Array, signature: number[]): boolean =>
+  signature.every((value, index) => bytes[index] === value);
+
+const detectMimeFromMagicBytes = (bytes: Uint8Array): string | null => {
+  if (bytes.length < 12) return null;
+
+  if (startsWith(bytes, [0xFF, 0xD8, 0xFF])) return 'image/jpeg';
+  if (startsWith(bytes, [0x89, 0x50, 0x4E, 0x47])) return 'image/png';
+  if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (startsWith(bytes, [0x42, 0x4D])) return 'image/bmp';
+  if (startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    return 'image/webp';
+  }
+
+  if ((startsWith(bytes, [0x49, 0x49, 0x2A, 0x00])) || (startsWith(bytes, [0x4D, 0x4D, 0x00, 0x2A]))) {
+    return 'image/tiff';
+  }
+
+  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'avif'].includes(brand)) {
+      return brand === 'avif' ? 'image/avif' : 'image/heic';
+    }
+    return 'video/mp4';
+  }
+
+  if (startsWith(bytes, [0x1A, 0x45, 0xDF, 0xA3])) return 'video/webm';
+  return null;
+};
+
+const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        await fs.unlink(file.path);
+      } catch (err: unknown) {
+        const fsErr = err as { code?: string };
+        if (fsErr.code !== 'ENOENT') {
+          throw err;
+        }
+      }
+    }),
+  );
+};
+
+const validateUploadedFileSignatures = async (
+  files: Express.Multer.File[],
+): Promise<{ valid: true } | { valid: false; error: string }> => {
+  for (const file of files) {
+    if (!isMediaMime(file.mimetype)) {
+      return { valid: false, error: 'Only image and video files are allowed' };
+    }
+
+    const handle = await fs.open(file.path, 'r');
+    const header = Buffer.alloc(64);
+    try {
+      await handle.read(header, 0, header.length, 0);
+    } finally {
+      await handle.close();
+    }
+
+    const detectedMime = detectMimeFromMagicBytes(header);
+
+    if (!detectedMime || !isMediaMime(detectedMime)) {
+      return { valid: false, error: `Unsupported file content for ${file.originalname}` };
+    }
+
+    const declaredIsVideo = isVideoMime(file.mimetype);
+    const detectedIsVideo = isVideoMime(detectedMime);
+    if (declaredIsVideo !== detectedIsVideo) {
+      return { valid: false, error: `MIME type mismatch for ${file.originalname}` };
+    }
+
+    file.mimetype = detectedMime;
+  }
+
+  return { valid: true };
+};
+
 const handleUpload = async (req: Request, res: Response) => {
   if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
@@ -117,11 +209,10 @@ const handleUpload = async (req: Request, res: Response) => {
     return;
   }
 
-  const hasUnsupportedMedia = files.some(
-    (file) => !file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/'),
-  );
-  if (hasUnsupportedMedia) {
-    res.status(400).json({ error: 'Only image and video files are allowed' });
+  const signatureValidation = await validateUploadedFileSignatures(files);
+  if (!signatureValidation.valid) {
+    await cleanupUploadedFiles(files);
+    res.status(400).json({ error: signatureValidation.error });
     return;
   }
 
@@ -132,16 +223,21 @@ const handleUpload = async (req: Request, res: Response) => {
   if (rawContentHashes != null) {
     try {
       const parsed = JSON.parse(rawContentHashes) as unknown;
-      if (!Array.isArray(parsed)) {
-        res.status(400).json({ error: 'content_hashes must be an array' });
+      const parsedHashes = validateContentHashes(parsed);
+      if (!parsedHashes.success) {
+        await cleanupUploadedFiles(files);
+        res.status(400).json({ error: parsedHashes.error });
         return;
       }
-      contentHashes = parsed.map((value) => (typeof value === 'string' ? value : null));
+
+      contentHashes = parsedHashes.data;
       if (contentHashes.length !== files.length) {
+        await cleanupUploadedFiles(files);
         res.status(400).json({ error: 'content_hashes count must match uploaded items' });
         return;
       }
     } catch {
+      await cleanupUploadedFiles(files);
       res.status(400).json({ error: 'Invalid content_hashes payload' });
       return;
     }
@@ -154,11 +250,13 @@ const handleUpload = async (req: Request, res: Response) => {
   if (rawFolderId != null) {
     folderId = Number(rawFolderId);
     if (!Number.isFinite(folderId)) {
+      await cleanupUploadedFiles(files);
       res.status(400).json({ error: 'Invalid folder_id' });
       return;
     }
     const folder = await getFolderById(folderId);
     if (!folder || folder.space_id !== spaceId || folder.deleted) {
+      await cleanupUploadedFiles(files);
       res.status(404).json({ error: 'Folder not found in this space' });
       return;
     }
@@ -178,6 +276,9 @@ const handleUpload = async (req: Request, res: Response) => {
         const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
         if (isVideoMime(file.mimetype)) {
           await generateVideoThumbnail({ inputPath: file.path, outputPath: thumbnailAbsPath });
+          if (file.mimetype === 'video/mp4') {
+            await applyMp4Faststart(file.path);
+          }
         } else {
           await sharp(file.path)
             .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
@@ -201,6 +302,7 @@ const handleUpload = async (req: Request, res: Response) => {
     );
     res.status(201).json({ items });
   } catch (err: unknown) {
+    await cleanupUploadedFiles(files);
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
   }
@@ -311,7 +413,14 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
 });
 
 // GET /spaces/:spaceId/media/:kind/:filename — authenticated media delivery
-router.get('/media/:kind/:filename', authenticate, isMember, async (req, res) => {
+// Accepts Bearer token in Authorization header OR ?t=<token> query param so that
+// the browser's native <video> element can make range requests for seeking.
+router.get('/media/:kind/:filename', (req, res, next) => {
+  if (!req.headers.authorization && req.query.t) {
+    req.headers.authorization = `Bearer ${req.query.t as string}`;
+  }
+  next();
+}, authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
   const { kind, filename } = req.params as { kind?: string; filename?: string };
 
@@ -500,9 +609,10 @@ router.post('/download', authenticate, isMember, async (req, res) => {
   }
 
   try {
-    const [directItems, folderItems] = await Promise.all([
+    const [directItems, folderItems, folderPaths] = await Promise.all([
       getItemsByIds({ spaceId, itemIds }),
       getFolderSubtreeItems({ spaceId, folderIds }),
+      getFolderSubtreePaths({ spaceId, folderIds }),
     ]);
 
     const toZip: Array<{ filePath: string; zipPath: string }> = [
@@ -521,6 +631,9 @@ router.post('/download', authenticate, isMember, async (req, res) => {
 
     const archive = archiver('zip', { zlib: { level: 5 } });
     archive.pipe(res);
+    for (const { folder_path } of folderPaths) {
+      archive.append(Buffer.alloc(0), { name: `${folder_path}/` });
+    }
     for (const entry of toZip) {
       archive.file(path.resolve(UPLOADS_ROOT, entry.filePath), { name: entry.zipPath });
     }

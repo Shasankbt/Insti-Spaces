@@ -115,6 +115,16 @@ CREATE TABLE space_folders (
 CREATE INDEX IF NOT EXISTS idx_space_folders_space_parent
 ON space_folders (space_id, parent_id);
 
+-- Unique folder name within the same parent (NULL parent = space root).
+-- Two separate partial indexes because NULL != NULL in standard unique indexes.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_name_with_parent
+ON space_folders (space_id, parent_id, name)
+WHERE deleted = false AND parent_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_name_root
+ON space_folders (space_id, name)
+WHERE deleted = false AND parent_id IS NULL;
+
 -- -------------------- space items ---------------------------
 CREATE TABLE space_items (
     photo_id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

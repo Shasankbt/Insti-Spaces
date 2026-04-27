@@ -16,6 +16,7 @@ import {
 import { HttpError, parseSpaceId, withTransaction, requireSpaceRole, handleError } from './spacesHelpers';
 import { canInviteAs, canRemoveRole } from '../spacePermissions';
 import type { Role } from '../types';
+import { validateSpacename } from '../validation';
 
 import spaceViewRouter from './spaceView';
 import spaceRolesRouter from './spaceRoles';
@@ -53,16 +54,18 @@ router.get('/', authenticate, deltaSync, async (req, res) => {
 
 // POST /spaces/create — create a space and auto-follow creator as admin
 router.post('/create', authenticate, async (req, res) => {
-  const { spacename } = req.body as { spacename?: string };
-  if (!spacename || !spacename.trim()) {
-    return res.status(400).json({ error: 'spacename is required' });
+  const parsed = validateSpacename((req.body as { spacename?: unknown }).spacename);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error });
   }
+
+  const spacename = parsed.data;
 
   try {
     const space = await withTransaction(async (client) => {
       const { rows } = await client.query<{ id: number; spacename: string; created_at: Date }>(
         `INSERT INTO spaces (spacename, owner_user_id) VALUES ($1, $2) RETURNING id, spacename, created_at`,
-        [spacename.trim(), req.user.id],
+        [spacename, req.user.id],
       );
       await client.query(
         `INSERT INTO following (userid, spaceid, role) VALUES ($1, $2, 'admin')`,
