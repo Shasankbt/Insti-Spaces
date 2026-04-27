@@ -32,7 +32,7 @@ _Last updated: 2026-04-26_
 - **Workaround**: Refresh and navigate into target folder to verify true location.
 - **Suggested fix**: Audit folder filtering/query logic and cache invalidation for root listing.
 
-## 4) "Select and move to trash" flow is incomplete
+## 4) "Select and move to trash" flow is incomplete ( SUGGESTION )
 
 - **Area**: Selection Actions / Trash
 - **Severity**: Medium
@@ -41,7 +41,7 @@ _Last updated: 2026-04-26_
 - **Impact**: Slower bulk cleanup and inconsistent UX.
 - **Workaround**: Trash items one by one.
 
-## 5) Drag-and-drop move between folders is missing
+## 5) Drag-and-drop move between folders is missing ( SUGGESTION )
 
 - **Area**: Item Movement / UX
 - **Severity**: Low
@@ -60,17 +60,7 @@ _Last updated: 2026-04-26_
 - **Workaround**: None reliable.
 - **Suggested fix**: Verify trash handler write path and transaction/ORM update logic.
 
-## 7) Deletion lifecycle policy is undefined (items/spaces/etc.)
-
-- **Area**: Product/Data Lifecycle
-- **Severity**: Medium
-- **Status**: Needs Discussion
-- **Description**: There is no finalized policy for retention/purge of soft-deleted entities.
-- **Impact**: Unbounded storage growth and unclear restore/purge behavior.
-- **Workaround**: Manual cleanup.
-- **Suggested direction**: Define retention window (e.g., 30/60/90 days), restore rules, and scheduled hard-delete jobs.
-
-## 8) Upload error handling is not comprehensive
+## &) Upload error handling is not comprehensive
 
 - **Area**: Uploading Items / Error UX
 - **Severity**: Medium
