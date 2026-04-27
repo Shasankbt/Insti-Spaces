@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import archiver from 'archiver';
+import rateLimit from 'express-rate-limit';
 import { authenticate, deltaSync, isMember, upload } from '../middleware';
 import {
   addSpaceItem,
@@ -12,7 +13,7 @@ import {
   getItemById,
   getItemByMediaPath,
   getItemsByIds,
-  getItemsInFolder,
+  getItemsInFolderPage,
   getItemsInFolderSince,
   getTrashedItems,
   getLikeSummaryForItems,
@@ -31,7 +32,6 @@ import {
   getFolderByName,
   getFolderById,
   getFolderSubtreeItems,
-  getSubfolders,
 } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
 
@@ -42,11 +42,17 @@ if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
 }
 
-const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
-const isSupportedMime = (mimeType: string): boolean => isImageMime(mimeType) || isVideoMime(mimeType);
 const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
 const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60_000,
+  limit: 20,
+  message: { error: 'Upload rate limit exceeded, try again in an hour' },
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+});
 
 const toMediaUrl = (spaceId: number, storagePath: string): string => {
   const kind = path.basename(path.dirname(storagePath));
@@ -99,7 +105,7 @@ const generateVideoThumbnail = async ({
   });
 
 const handleUpload = async (req: Request, res: Response) => {
-  if (!['contributor', 'moderator', 'admin'].includes(req.member.role)) {
+  if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
     return;
   }
@@ -110,7 +116,9 @@ const handleUpload = async (req: Request, res: Response) => {
     return;
   }
 
-  const hasUnsupportedMedia = files.some((file) => !isSupportedMime(file.mimetype));
+  const hasUnsupportedMedia = files.some(
+    (file) => !file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/'),
+  );
   if (hasUnsupportedMedia) {
     res.status(400).json({ error: 'Only image and video files are allowed' });
     return;
@@ -225,8 +233,6 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
     }
 
     const breadcrumbs = folderId != null ? await getFolderAncestors(folderId) : [];
-    const folders = await getSubfolders({ spaceId, parentId: folderId });
-    const rawItems = await getItemsInFolder({ spaceId, folderId });
 
     const toFolder = (f: { id: number; name: string; parent_id: number | null }) => ({
       id: f.id,
@@ -237,8 +243,6 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
     res.json({
       currentFolder: currentFolder ? toFolder(currentFolder) : null,
       breadcrumbs: breadcrumbs.map(toFolder),
-      folders: folders.map(toFolder),
-      items: rawItems.map((item) => toItemResponse(spaceId, item)),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
@@ -246,7 +250,9 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/items?folder_id=<n>&since=<iso> — delta-sync items in a folder
+// GET /spaces/:spaceId/items?folder_id=<n>&since=<iso>&cursor=<b64>&limit=<n>
+// Initial/load-more: since=EPOCH or cursor present → cursor pagination
+// Delta sync: since>EPOCH, no cursor → return changed items only
 router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
@@ -264,14 +270,39 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
     }
   }
 
+  const cursorRaw = req.query.cursor as string | undefined;
+  const limitRaw = req.query.limit as string | undefined;
+  const limit = Math.min(Number(limitRaw) || 50, 200);
+  const isInitialLoad = req.since.getTime() === 0;
+
   try {
-    const rawItems = await getItemsInFolderSince({ spaceId, folderId, since: req.since });
-    const items = rawItems.map((item) => ({
-      ...toItemResponse(spaceId, item),
-      updated_at: item.updated_at,
-      deleted: item.deleted || item.trashed_at != null,
-    }));
-    res.json({ items });
+    if (cursorRaw != null || isInitialLoad) {
+      let cursor: { at: string; id: string } | null = null;
+      if (cursorRaw) {
+        try {
+          cursor = JSON.parse(Buffer.from(cursorRaw, 'base64url').toString()) as { at: string; id: string };
+        } catch {
+          res.status(400).json({ error: 'Invalid cursor' });
+          return;
+        }
+      }
+      const { rows, nextCursor } = await getItemsInFolderPage({ spaceId, folderId, limit, cursor });
+      const items = rows.map((item) => ({
+        ...toItemResponse(spaceId, item),
+        updated_at: item.updated_at,
+        deleted: false,
+      }));
+      const nc = nextCursor ? Buffer.from(JSON.stringify(nextCursor)).toString('base64url') : null;
+      res.json({ items, nextCursor: nc });
+    } else {
+      const rawItems = await getItemsInFolderSince({ spaceId, folderId, since: req.since });
+      const items = rawItems.map((item) => ({
+        ...toItemResponse(spaceId, item),
+        updated_at: item.updated_at,
+        deleted: item.deleted || item.trashed_at != null,
+      }));
+      res.json({ items, nextCursor: null });
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
@@ -319,7 +350,7 @@ router.get('/media/:kind/:filename', authenticate, isMember, async (req, res) =>
 });
 
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
-router.post('/upload', authenticate, isMember, upload.array('items', 20), handleUpload);
+router.post('/upload', authenticate, isMember, uploadLimiter, upload.array('items', 20), handleUpload);
 
 // POST /spaces/:spaceId/items/hash-check — return already-existing content hashes in this space
 router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
@@ -348,7 +379,7 @@ router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/trash — list recoverable trashed items for space members
+// GET /spaces/:spaceId/trash?limit=50&offset=0 — paginated trash list
 router.get('/trash', authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
@@ -356,10 +387,13 @@ router.get('/trash', authenticate, isMember, async (req, res) => {
     return;
   }
 
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+
   try {
     await purgeExpiredSpaceTrash({ spaceId });
-    const trash = await getTrashedItems({ spaceId });
-    res.json({ items: trash.map((item) => toItemResponse(spaceId, item)) });
+    const { rows, hasMore } = await getTrashedItems({ spaceId, limit, offset });
+    res.json({ items: rows.map((item) => toItemResponse(spaceId, item)), hasMore });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

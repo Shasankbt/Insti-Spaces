@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../constants';
 import axios from 'axios';
 
 export default function JoinSpace() {
@@ -33,7 +34,7 @@ export default function JoinSpace() {
 
     axios
       .post<{ spaceId?: number; spaceName?: string }>(
-        `http://localhost:3000/spaces/join-via-link`,
+        `${API_BASE}/spaces/join-via-link`,
         { token: inviteToken },
         { headers: { Authorization: `Bearer ${token}` } },
       )

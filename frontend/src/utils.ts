@@ -21,6 +21,25 @@ export function applyDelta<T extends object>(
 }
 
 /**
+ * Fetch a cursor-paginated page from `url`.
+ * Extra params (limit, cursor) are appended to the URL.
+ */
+export async function fetchPage<T extends object>(
+  url: string,
+  token: string,
+  params: Record<string, string> = {},
+): Promise<{ rows: T[]; nextCursor: string | null }> {
+  const reqUrl = new URL(url);
+  for (const [k, v] of Object.entries(params)) reqUrl.searchParams.set(k, v);
+  const res = await fetch(reqUrl.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+  const body = (await res.json()) as { items?: T[]; nextCursor?: string | null };
+  return { rows: body.items ?? [], nextCursor: body.nextCursor ?? null };
+}
+
+/**
  * Fetch a delta from `url` for rows newer than `since`.
  * Returns { rows, newSince } on 200, or null on 304 / empty.
  */

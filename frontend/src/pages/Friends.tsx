@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { createFriendRequest, searchUsers } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
-import { POLL_INTERVAL } from '../constants';
+import { API_BASE, POLL_INTERVAL } from '../constants';
 import type { Friend, UserSearchResult } from '../types';
 
 export default function Friends() {
@@ -15,7 +15,7 @@ export default function Friends() {
     data: friends,
     loading: friendsLoading,
     error: friendsError,
-  } = useDeltaSync<Friend>('http://localhost:3000/friends', {
+  } = useDeltaSync<Friend>(`${API_BASE}/friends`, {
     token,
     interval: POLL_INTERVAL,
     pause: !isAuthenticated || activeTab !== 'friends',

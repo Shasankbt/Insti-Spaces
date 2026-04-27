@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useReducer } from 'react';
-import { fetchDelta, applyDelta } from '../utils';
+import { fetchDelta, fetchPage, applyDelta } from '../utils';
 
 const EPOCH = new Date(0);
 
@@ -8,10 +8,12 @@ interface SyncState<T> {
   since: Date;
   loading: boolean;
   error: string | null;
+  nextCursor: string | null;
 }
 
 type SyncAction<T> =
   | { type: 'MERGE'; rows: T[]; since: Date }
+  | { type: 'MERGE_PAGE'; rows: T[]; nextCursor: string | null }
   | { type: 'RESET' }
   | { type: 'ERROR'; error: string }
   | { type: 'LOADING'; value: boolean };
@@ -27,8 +29,24 @@ function makeReducer<T extends { deleted?: boolean }>(idKey: keyof T) {
           loading: false,
           error: null,
         };
+      case 'MERGE_PAGE': {
+        // Advance since to the newest updated_at seen in this page (never go backwards).
+        const pageSince = action.rows.reduce((max, r) => {
+          const row = r as { updated_at?: string; uploaded_at?: string };
+          const t = new Date((row.updated_at ?? row.uploaded_at ?? '') as string);
+          return t > max ? t : max;
+        }, state.since);
+        return {
+          ...state,
+          dataMap: applyDelta(state.dataMap, action.rows, idKey),
+          since: pageSince,
+          nextCursor: action.nextCursor,
+          loading: false,
+          error: null,
+        };
+      }
       case 'RESET':
-        return { ...state, dataMap: {}, since: EPOCH, loading: true };
+        return { ...state, dataMap: {}, since: EPOCH, nextCursor: null, loading: true };
       case 'ERROR':
         return { ...state, error: action.error, loading: false };
       case 'LOADING':
@@ -44,6 +62,7 @@ interface UseDeltaSyncOptions {
   interval?: number;
   pause?: boolean;
   idKey?: string;
+  pageSize?: number;
 }
 
 interface UseDeltaSyncResult<T> {
@@ -51,13 +70,15 @@ interface UseDeltaSyncResult<T> {
   dataMap: Record<string | number, T>;
   loading: boolean;
   error: string | null;
+  nextCursor: string | null;
   sync: () => Promise<void>;
   refresh: () => Promise<void>;
+  loadMore: () => Promise<void>;
 }
 
 export function useDeltaSync<T extends object>(
   url: string,
-  { token, interval = 15_000, pause = false, idKey = 'id' }: UseDeltaSyncOptions = {},
+  { token, interval = 15_000, pause = false, idKey = 'id', pageSize }: UseDeltaSyncOptions = {},
 ): UseDeltaSyncResult<T> {
   const reducerRef = useRef<ReturnType<typeof makeReducer<T>> | null>(null);
   if (!reducerRef.current) reducerRef.current = makeReducer<T>(idKey as keyof T);
@@ -67,10 +88,13 @@ export function useDeltaSync<T extends object>(
     since: EPOCH,
     loading: true,
     error: null,
+    nextCursor: null,
   });
 
   const sinceRef = useRef<Date>(EPOCH);
   sinceRef.current = state.since;
+  const nextCursorRef = useRef<string | null>(null);
+  nextCursorRef.current = state.nextCursor;
 
   const sync = useCallback(async (): Promise<void> => {
     if (!token) return;
@@ -87,30 +111,66 @@ export function useDeltaSync<T extends object>(
     }
   }, [url, token]);
 
-  const refresh = useCallback(async (): Promise<void> => {
-    if (!token) return;
-    sinceRef.current = EPOCH;
+  const loadInitial = useCallback(async (): Promise<void> => {
+    if (!token || !pageSize) return;
     dispatch({ type: 'RESET' });
     try {
-      const result = await fetchDelta<T>(url, EPOCH, token);
-      if (!result) {
-        dispatch({ type: 'LOADING', value: false });
-        return;
-      }
-      dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
+      const result = await fetchPage<T>(url, token, { limit: String(pageSize) });
+      dispatch({ type: 'MERGE_PAGE', rows: result.rows, nextCursor: result.nextCursor });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown sync error';
       dispatch({ type: 'ERROR', error: message });
     }
-  }, [url, token]);
+  }, [url, token, pageSize]);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!token) return;
+    if (pageSize) {
+      dispatch({ type: 'RESET' });
+      try {
+        const result = await fetchPage<T>(url, token, { limit: String(pageSize) });
+        dispatch({ type: 'MERGE_PAGE', rows: result.rows, nextCursor: result.nextCursor });
+      } catch (err: unknown) {
+        dispatch({ type: 'ERROR', error: err instanceof Error ? err.message : 'Unknown sync error' });
+      }
+    } else {
+      sinceRef.current = EPOCH;
+      dispatch({ type: 'RESET' });
+      try {
+        const result = await fetchDelta<T>(url, EPOCH, token);
+        if (!result) { dispatch({ type: 'LOADING', value: false }); return; }
+        dispatch({ type: 'MERGE', rows: result.rows, since: result.newSince });
+      } catch (err: unknown) {
+        dispatch({ type: 'ERROR', error: err instanceof Error ? err.message : 'Unknown sync error' });
+      }
+    }
+  }, [url, token, pageSize]);
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (!token || !pageSize || !nextCursorRef.current) return;
+    try {
+      const result = await fetchPage<T>(url, token, {
+        limit: String(pageSize),
+        cursor: nextCursorRef.current,
+      });
+      dispatch({ type: 'MERGE_PAGE', rows: result.rows, nextCursor: result.nextCursor });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown sync error';
+      dispatch({ type: 'ERROR', error: message });
+    }
+  }, [url, token, pageSize]);
 
   // initial fetch + polling
   useEffect(() => {
     if (pause) return;
-    void sync();
+    if (pageSize) {
+      void loadInitial();
+    } else {
+      void sync();
+    }
     const id = setInterval(() => void sync(), interval);
     return () => clearInterval(id);
-  }, [sync, interval, pause]);
+  }, [sync, loadInitial, interval, pause, pageSize]);
 
   // re-sync when tab becomes visible
   useEffect(() => {
@@ -123,5 +183,14 @@ export function useDeltaSync<T extends object>(
 
   const data = Object.values(state.dataMap);
 
-  return { data, dataMap: state.dataMap, loading: state.loading, error: state.error, sync, refresh };
+  return {
+    data,
+    dataMap: state.dataMap,
+    loading: state.loading,
+    error: state.error,
+    nextCursor: state.nextCursor,
+    sync,
+    refresh,
+    loadMore,
+  };
 }

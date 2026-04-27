@@ -1,7 +1,6 @@
 import axios from 'axios';
 import type { ExplorerResponse, Role, SpaceItem, SpacePhoto } from './types';
-
-const API = 'http://localhost:3000';
+import { API_BASE as API } from './constants';
 
 const authHeaders = (token: string) => ({
   headers: {
@@ -214,9 +213,6 @@ export const getSpacePageView = ({
     ...authHeaders(token),
   });
 
-export const getSpaceItems = ({ spaceId, token }: { spaceId: number; token: string }) =>
-  axios.get<{ items: SpaceItem[] }>(`${API}/spaces/${spaceId}/items`, authHeaders(token));
-
 export const getSpaceExplorer = ({
   spaceId,
   token,
@@ -316,8 +312,21 @@ export const deleteSpaceItem = ({
   token: string;
 }) => axios.delete(`${API}/spaces/${spaceId}/items/${itemId}`, authHeaders(token));
 
-export const getSpaceTrash = ({ spaceId, token }: { spaceId: number; token: string }) =>
-  axios.get<{ items: SpaceItem[] }>(`${API}/spaces/${spaceId}/trash`, authHeaders(token));
+export const getSpaceTrash = ({
+  spaceId,
+  token,
+  limit = 50,
+  offset = 0,
+}: {
+  spaceId: number;
+  token: string;
+  limit?: number;
+  offset?: number;
+}) =>
+  axios.get<{ items: SpaceItem[]; hasMore: boolean }>(`${API}/spaces/${spaceId}/trash`, {
+    params: { limit, offset },
+    ...authHeaders(token),
+  });
 
 export const restoreSpaceTrashItem = ({
   spaceId,

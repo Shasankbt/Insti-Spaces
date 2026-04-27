@@ -16,9 +16,9 @@ import type { ExplorerFolder, Role, Space, SpaceItem } from '../../types';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
+import { API_BASE, POLL_INTERVAL } from '../../constants';
 
-const API_BASE = 'http://localhost:3000';
-const POLL_INTERVAL = 5_000;
+const TRASH_LIMIT = 50;
 
 interface SpaceExplorerProps {
   space: Space;
@@ -107,6 +107,8 @@ export default function SpaceExplorer({
   const [trashLoading, setTrashLoading] = useState(false);
   const [trashError, setTrashError] = useState<string | null>(null);
   const [trashActionId, setTrashActionId] = useState<string | null>(null);
+  const [trashOffset, setTrashOffset] = useState(0);
+  const [trashHasMore, setTrashHasMore] = useState(false);
   const [moveItem, setMoveItem] = useState<DeltaItem | null>(null);
   const [moveTargetFolder, setMoveTargetFolder] = useState<string>('root');
   const [moveLoading, setMoveLoading] = useState(false);
@@ -249,12 +251,14 @@ export default function SpaceExplorer({
     }
   };
 
-  const fetchTrash = useCallback(async () => {
+  const fetchTrash = useCallback(async (offset = 0) => {
     setTrashLoading(true);
     setTrashError(null);
     try {
-      const { data } = await getSpaceTrash({ spaceId: space.id, token });
-      setTrashItems(data.items ?? []);
+      const { data } = await getSpaceTrash({ spaceId: space.id, token, limit: TRASH_LIMIT, offset });
+      setTrashItems((prev) => offset === 0 ? (data.items ?? []) : [...prev, ...(data.items ?? [])]);
+      setTrashHasMore(data.hasMore ?? false);
+      setTrashOffset(offset);
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
       setTrashError(apiErr?.error ?? 'Failed to load trash');
@@ -323,10 +327,13 @@ export default function SpaceExplorer({
     loading: itemsLoading,
     error: itemsError,
     refresh: refreshItems,
+    nextCursor: itemsNextCursor,
+    loadMore: loadMoreItems,
   } = useDeltaSync<DeltaItem>(itemsUrl, {
     token,
     interval: POLL_INTERVAL,
     idKey: 'itemId',
+    pageSize: 50,
   });
 
   const {
@@ -489,6 +496,8 @@ export default function SpaceExplorer({
               setOpenMenuId(null);
               setSelectedItem(null);
               setSelectMode(false);
+              setTrashOffset(0);
+              setTrashHasMore(false);
             }}
           >
             {viewMode === 'trash' ? 'Back to files' : 'Trash'}
@@ -712,6 +721,25 @@ export default function SpaceExplorer({
               </div>
             ))}
           </div>
+        )}
+
+        {viewMode === 'files' && itemsNextCursor && (
+          <button
+            className="space-explorer__load-more"
+            onClick={() => void loadMoreItems()}
+          >
+            Load more
+          </button>
+        )}
+
+        {viewMode === 'trash' && trashHasMore && (
+          <button
+            className="space-explorer__load-more"
+            onClick={() => void fetchTrash(trashOffset + TRASH_LIMIT)}
+            disabled={trashLoading}
+          >
+            {trashLoading ? 'Loading…' : 'Load more'}
+          </button>
         )}
 
         {selectedItem && (

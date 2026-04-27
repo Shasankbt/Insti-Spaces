@@ -2,8 +2,6 @@
 
 export type Role = 'viewer' | 'contributor' | 'moderator' | 'admin';
 
-export type RequestableRole = 'contributor' | 'moderator';
-
 export type RoleRequestStatus = 'pending' | 'accepted' | 'rejected';
 
 export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected';
@@ -32,10 +30,6 @@ export interface Space {
   id: number;
   spacename: string;
   created_at: Date;
-}
-
-export interface SpaceWithRole extends Space {
-  role: Role;
 }
 
 export interface RoleRequest {

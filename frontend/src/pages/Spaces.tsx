@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { createSpace } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
+import { API_BASE, POLL_INTERVAL } from '../constants';
 import type { Space } from '../types';
 
 export default function Spaces() {
@@ -19,9 +20,9 @@ export default function Spaces() {
     loading: spacesLoading,
     error: spacesError,
     sync,
-  } = useDeltaSync<Space>('http://localhost:3000/spaces', {
+  } = useDeltaSync<Space>(`${API_BASE}/spaces`, {
     token,
-    interval: 5_000,
+    interval: POLL_INTERVAL,
     pause: !isAuthenticated || activeTab !== 'my-spaces',
   });
 

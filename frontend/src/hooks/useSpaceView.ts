@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { changeRoleInSpace, removeMember } from '../Api';
 import { useDeltaSync } from './useDeltaSync';
+import { API_BASE, POLL_INTERVAL } from '../constants';
 import type { Space, Member, Role } from '../types';
-
-const API = 'http://localhost:3000';
 
 interface UseSpaceViewOptions {
   id: string | undefined;
   token: string | null;
-  userId: number | undefined;
 }
 
 interface UseSpaceViewResult {
@@ -26,11 +24,7 @@ interface UseSpaceViewResult {
   fetchMembers: () => Promise<void>;
 }
 
-export default function useSpaceView({
-  id,
-  token,
-  userId,
-}: UseSpaceViewOptions): UseSpaceViewResult {
+export default function useSpaceView({ id, token }: UseSpaceViewOptions): UseSpaceViewResult {
   const [space, setSpace] = useState<Space | null>(null);
   const [spaceLoading, setSpaceLoading] = useState(false);
   const [spaceError, setSpaceError] = useState<Error | null>(null);
@@ -39,16 +33,11 @@ export default function useSpaceView({
   const [removingUserId, setRemovingUserId] = useState<number | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const userIdRef = useRef(userId);
-  useEffect(() => {
-    userIdRef.current = userId;
-  }, [userId]);
-
   useEffect(() => {
     if (!token) return;
     setSpaceLoading(true);
     setSpaceError(null);
-    fetch(`${API}/spaces/${id}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_BASE}/spaces/${id}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (r) => {
         const data = (await r.json().catch(() => ({}))) as { space?: Space; error?: string };
         if (!r.ok) {
@@ -71,9 +60,9 @@ export default function useSpaceView({
     data: members,
     loading: membersLoading,
     sync: fetchMembers,
-  } = useDeltaSync<Member>(`${API}/spaces/${id}/members`, {
+  } = useDeltaSync<Member>(`${API_BASE}/spaces/${id}/members`, {
     token,
-    interval: 5_000,
+    interval: POLL_INTERVAL,
   });
 
   const handleRoleChange = async ({

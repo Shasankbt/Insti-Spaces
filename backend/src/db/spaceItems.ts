@@ -83,23 +83,53 @@ export const getSpaceItemsForPageView = async ({
   return rows;
 };
 
-export const getItemsInFolder = async ({
+export const getItemsInFolderPage = async ({
   spaceId,
   folderId,
+  limit = 50,
+  cursor = null,
 }: {
   spaceId: number;
   folderId: number | null;
-}): Promise<SpaceItem[]> => {
-  const { rows } = await pool.query<SpaceItem>(
-    `SELECT * FROM space_items
-     WHERE space_id = $1
-       AND deleted = false
-       AND trashed_at IS NULL
-       AND folder_id IS NOT DISTINCT FROM $2
-     ORDER BY uploaded_at DESC`,
-    [spaceId, folderId],
-  );
-  return rows;
+  limit?: number;
+  cursor?: { at: string; id: string } | null;
+}): Promise<{ rows: SpaceItem[]; nextCursor: { at: string; id: string } | null }> => {
+  const cap = Math.min(Math.max(limit, 1), 200);
+  const fetch = cap + 1;
+  let rows: SpaceItem[];
+
+  if (cursor) {
+    const { rows: r } = await pool.query<SpaceItem>(
+      `SELECT * FROM space_items
+       WHERE space_id = $1
+         AND folder_id IS NOT DISTINCT FROM $2
+         AND deleted = false
+         AND trashed_at IS NULL
+         AND (uploaded_at < $3 OR (uploaded_at = $3 AND photo_id::text < $4))
+       ORDER BY uploaded_at DESC, photo_id DESC
+       LIMIT $5`,
+      [spaceId, folderId, cursor.at, cursor.id, fetch],
+    );
+    rows = r;
+  } else {
+    const { rows: r } = await pool.query<SpaceItem>(
+      `SELECT * FROM space_items
+       WHERE space_id = $1
+         AND folder_id IS NOT DISTINCT FROM $2
+         AND deleted = false
+         AND trashed_at IS NULL
+       ORDER BY uploaded_at DESC, photo_id DESC
+       LIMIT $3`,
+      [spaceId, folderId, fetch],
+    );
+    rows = r;
+  }
+
+  const hasMore = rows.length > cap;
+  const page = hasMore ? rows.slice(0, cap) : rows;
+  if (!hasMore || page.length === 0) return { rows: page, nextCursor: null };
+  const last = page[page.length - 1];
+  return { rows: page, nextCursor: { at: last.uploaded_at.toISOString(), id: last.photo_id } };
 };
 
 export const getItemsInFolderSince = async ({
@@ -124,18 +154,25 @@ export const getItemsInFolderSince = async ({
 
 export const getTrashedItems = async ({
   spaceId,
+  limit = 50,
+  offset = 0,
 }: {
   spaceId: number;
-}): Promise<SpaceItem[]> => {
+  limit?: number;
+  offset?: number;
+}): Promise<{ rows: SpaceItem[]; hasMore: boolean }> => {
+  const cap = Math.min(Math.max(limit, 1), 200);
   const { rows } = await pool.query<SpaceItem>(
     `SELECT * FROM space_items
      WHERE space_id = $1
        AND deleted = false
        AND trashed_at IS NOT NULL
-     ORDER BY trashed_at DESC`,
-    [spaceId],
+     ORDER BY trashed_at DESC
+     LIMIT $2 OFFSET $3`,
+    [spaceId, cap + 1, offset],
   );
-  return rows;
+  const hasMore = rows.length > cap;
+  return { rows: hasMore ? rows.slice(0, cap) : rows, hasMore };
 };
 
 export const getItemsByIds = async ({
@@ -276,26 +313,6 @@ export const moveSpaceItem = async ({
   return rows[0] ?? null;
 };
 
-export const softDeleteSpaceItem = async ({
-  spaceId,
-  itemId,
-}: {
-  spaceId: number;
-  itemId: string;
-}): Promise<boolean> => {
-  const { rowCount } = await pool.query(
-    `UPDATE space_items
-     SET deleted = true,
-         trashed_at = COALESCE(trashed_at, NOW())
-     WHERE space_id = $1
-       AND photo_id = $2::uuid
-       AND deleted = false
-     RETURNING photo_id`,
-    [spaceId, itemId],
-  );
-  return (rowCount ?? 0) > 0;
-};
-
 export const permanentlyDeleteTrashedSpaceItem = async ({
   spaceId,
   itemId,
@@ -332,6 +349,17 @@ export const emptySpaceTrash = async ({
   return rowCount ?? 0;
 };
 
+export const purgeExpiredTrash = async (): Promise<number> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE deleted = false
+       AND trashed_at IS NOT NULL
+       AND trashed_at <= NOW() - INTERVAL '7 days'`,
+  );
+  return rowCount ?? 0;
+};
+
 export const purgeExpiredSpaceTrash = async ({
   spaceId,
 }: {
@@ -345,17 +373,6 @@ export const purgeExpiredSpaceTrash = async ({
        AND trashed_at IS NOT NULL
        AND trashed_at <= NOW() - INTERVAL '7 days'`,
     [spaceId],
-  );
-  return rowCount ?? 0;
-};
-
-export const purgeExpiredTrash = async (): Promise<number> => {
-  const { rowCount } = await pool.query(
-    `UPDATE space_items
-     SET deleted = true
-     WHERE deleted = false
-       AND trashed_at IS NOT NULL
-       AND trashed_at <= NOW() - INTERVAL '7 days'`,
   );
   return rowCount ?? 0;
 };

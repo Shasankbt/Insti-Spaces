@@ -31,7 +31,7 @@ export default function SpaceView() {
     handleRoleChange,
     handleRemoveMember,
     fetchMembers,
-  } = useSpaceView({ id, token, userId: user?.id });
+  } = useSpaceView({ id, token });
 
   const [openModal, setOpenModal] = useState<ModalType>(null);
   const [explorerRefresh, setExplorerRefresh] = useState(0);

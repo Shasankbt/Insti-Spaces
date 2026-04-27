@@ -88,8 +88,6 @@ export interface ExplorerFolder {
 export interface ExplorerResponse {
   currentFolder: ExplorerFolder | null;
   breadcrumbs: ExplorerFolder[];
-  folders: ExplorerFolder[];
-  items: SpaceItem[];
 }
 
 // ── Notification union ────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { acceptFriendRequest, acceptRoleRequest, rejectRoleRequest } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
+import { API_BASE, POLL_INTERVAL } from '../constants';
 import type { Notification, FriendRequestNotification, RoleRequestNotification } from '../types';
 
 export default function Notifications() {
@@ -12,9 +13,9 @@ export default function Notifications() {
     loading,
     error,
     refresh,
-  } = useDeltaSync<Notification>('http://localhost:3000/user/notifications', {
+  } = useDeltaSync<Notification>(`${API_BASE}/user/notifications`, {
     token,
-    interval: 5_000,
+    interval: POLL_INTERVAL,
     pause: !isAuthenticated,
     idKey: 'uid',
   });
