@@ -60,15 +60,15 @@ _Last updated: 2026-04-26_
 - **Workaround**: None reliable.
 - **Suggested fix**: Verify trash handler write path and transaction/ORM update logic.
 
-## 7) Deletion lifecycle policy is undefined (items/spaces/etc.)
+## 7) Upload Model exploding with no of photoes
 
-- **Area**: Product/Data Lifecycle
+- **Area**: Uploading Items
 - **Severity**: Medium
-- **Status**: Needs Discussion
-- **Description**: There is no finalized policy for retention/purge of soft-deleted entities.
-- **Impact**: Unbounded storage growth and unclear restore/purge behavior.
-- **Workaround**: Manual cleanup.
-- **Suggested direction**: Define retention window (e.g., 30/60/90 days), restore rules, and scheduled hard-delete jobs.
+- **Status**: Working
+- **Description**: upload page has no scroll , so upload button hindering beyond bottom borderline
+- **Impact**: not user friendly.
+- **Workaround**: use cntrl - to find upload button.
+- **Suggested direction**: implement a scroll feature and or just don't display all photoes in the upload model
 
 ## 8) Upload error handling is not comprehensive
 
