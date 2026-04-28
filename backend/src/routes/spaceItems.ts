@@ -12,6 +12,7 @@ import {
   addSpaceItem,
   bulkMoveSpaceItems,
   bulkMoveSpaceItemsToTrash,
+  getDisplayNamesInFolder,
   getExistingContentHashes,
   getItemById,
   getItemsByIds,
@@ -144,6 +145,15 @@ const detectMimeFromMagicBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
+const uniqueDisplayName = (original: string, taken: Set<string>): string => {
+  if (!taken.has(original)) return original;
+  const ext = path.extname(original);
+  const base = path.basename(original, ext);
+  let n = 1;
+  while (taken.has(`${base} (${n})${ext}`)) n++;
+  return `${base} (${n})${ext}`;
+};
+
 const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
   await Promise.all(
     files.map(async (file) => {
@@ -262,6 +272,14 @@ const handleUpload = async (req: Request, res: Response) => {
     const thumbnailDirAbs = path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'thumbnails');
     await fs.mkdir(thumbnailDirAbs, { recursive: true });
 
+    const existingNames = await getDisplayNamesInFolder({ spaceId, folderId });
+    const takenNames = new Set(existingNames);
+    const displayNames = files.map((file) => {
+      const name = uniqueDisplayName(file.originalname, takenNames);
+      takenNames.add(name);
+      return name;
+    });
+
     const items = await Promise.all(
       files.map(async (file, fileIndex) => {
         const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
@@ -291,7 +309,7 @@ const handleUpload = async (req: Request, res: Response) => {
           contentHash: contentHashes[fileIndex] ?? null,
           mimeType: file.mimetype,
           sizeBytes: file.size,
-          displayName: file.originalname,
+          displayName: displayNames[fileIndex],
           capturedAt: null,
         });
       }),

@@ -35,6 +35,25 @@ export const addSpaceItem = async ({
   return rows[0];
 };
 
+export const getDisplayNamesInFolder = async ({
+  spaceId,
+  folderId,
+}: {
+  spaceId: number;
+  folderId: number | null;
+}): Promise<string[]> => {
+  const { rows } = await pool.query<{ display_name: string }>(
+    `SELECT display_name
+     FROM space_items
+     WHERE space_id = $1
+       AND deleted = false
+       AND trashed_at IS NULL
+       AND folder_id IS NOT DISTINCT FROM $2`,
+    [spaceId, folderId],
+  );
+  return rows.map((row) => row.display_name);
+};
+
 export const getExistingContentHashes = async ({
   spaceId,
   hashes,

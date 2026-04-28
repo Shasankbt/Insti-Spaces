@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
-import { checkSpaceItemHashes, uploadToSpace } from '../../Api';
+import { uploadToSpace } from '../../Api';
 import type { Space } from '../../types';
 
 interface MediaPreview {
@@ -15,7 +15,6 @@ interface UploadModalProps {
   onClose: () => void;
   onUploadSuccess?: () => void;
 }
-
 const computeSha256Hex = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer();
   const digest = await crypto.subtle.digest('SHA-256', buffer);
@@ -70,44 +69,22 @@ export default function UploadModal({ space, token, folderId, onClose, onUploadS
     setUploadSuccess(null);
     try {
       setUploading(true);
+
       const fileHashes = await Promise.all(files.map((file) => computeSha256Hex(file)));
 
-      let existingHashes = new Set<string>();
-      try {
-        const { data } = await checkSpaceItemHashes({
-          spaceId: space.id,
-          hashes: fileHashes,
-          token,
-        });
-        existingHashes = new Set(data.existingHashes ?? []);
-      } catch {
-        existingHashes = new Set<string>();
-      }
+      // hash-check + duplicate-skip removed intentionally:
+      // hashes are stored on the backend for future duplicate-detection features.
 
-      const filesToUpload: File[] = [];
-      const hashesToUpload: string[] = [];
-      for (let index = 0; index < files.length; index += 1) {
-        const hash = fileHashes[index];
-        if (!existingHashes.has(hash)) {
-          filesToUpload.push(files[index]);
-          hashesToUpload.push(hash);
-        }
-      }
-
-      const duplicateCount = files.length - filesToUpload.length;
-
-      if (filesToUpload.length > 0) {
+      if (files.length > 0) {
         const formData = new FormData();
-        filesToUpload.forEach((file) => formData.append('items', file));
-        formData.append('content_hashes', JSON.stringify(hashesToUpload));
+        files.forEach((file) => formData.append('items', file));
+        formData.append('content_hashes', JSON.stringify(fileHashes));
         if (folderId != null) formData.append('folder_id', String(folderId));
         await uploadToSpace({ spaceId: space.id, formData, token });
         onUploadSuccess?.();
       }
 
-      setUploadSuccess(
-        `Upload complete: ${filesToUpload.length} uploaded, ${duplicateCount} duplicate${duplicateCount === 1 ? '' : 's'} skipped.`,
-      );
+      setUploadSuccess(`Upload complete: ${files.length} item${files.length === 1 ? '' : 's'} uploaded.`);
       setFiles([]);
       previews.forEach((preview) => URL.revokeObjectURL(preview.url));
       setPreviews([]);
