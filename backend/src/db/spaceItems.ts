@@ -314,6 +314,50 @@ export const moveSpaceItem = async ({
   return rows[0] ?? null;
 };
 
+export const bulkMoveSpaceItemsToTrash = async ({
+  spaceId,
+  itemIds,
+}: {
+  spaceId: number;
+  itemIds: string[];
+}): Promise<SpaceItem[]> => {
+  if (itemIds.length === 0) return [];
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET trashed_at = NOW()
+     WHERE space_id = $1
+       AND photo_id = ANY($2::uuid[])
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemIds],
+  );
+  return rows;
+};
+
+export const bulkMoveSpaceItems = async ({
+  spaceId,
+  itemIds,
+  folderId,
+}: {
+  spaceId: number;
+  itemIds: string[];
+  folderId: number | null;
+}): Promise<SpaceItem[]> => {
+  if (itemIds.length === 0) return [];
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET folder_id = $3
+     WHERE space_id = $1
+       AND photo_id = ANY($2::uuid[])
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemIds, folderId],
+  );
+  return rows;
+};
+
 export const permanentlyDeleteTrashedSpaceItem = async ({
   spaceId,
   itemId,

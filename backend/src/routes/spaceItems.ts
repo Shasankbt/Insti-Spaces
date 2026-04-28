@@ -10,6 +10,8 @@ import { authenticate, deltaSync, isMember, upload } from '../middleware';
 import { PAGE, RATE, TRASH, UPLOAD } from '../config';
 import {
   addSpaceItem,
+  bulkMoveSpaceItems,
+  bulkMoveSpaceItemsToTrash,
   getExistingContentHashes,
   getItemById,
   getItemByMediaPath,
@@ -756,6 +758,86 @@ router.patch('/items/:itemId/move', authenticate, isMember, async (req, res) => 
       return;
     }
     res.json({ item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /spaces/:spaceId/items/bulk-trash — move multiple items to trash (moderator+)
+router.post('/items/bulk-trash', authenticate, isMember, async (req, res) => {
+  if (!canManageTrash(req.member.role)) {
+    res.status(403).json({ error: 'Only admins and moderators can move items to trash' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  const { itemIds } = req.body as { itemIds?: unknown };
+  if (!Array.isArray(itemIds) || itemIds.some((id) => typeof id !== 'string')) {
+    res.status(400).json({ error: 'itemIds must be an array of strings' });
+    return;
+  }
+
+  if (itemIds.length === 0) {
+    res.json({ count: 0 });
+    return;
+  }
+
+  try {
+    const items = await bulkMoveSpaceItemsToTrash({ spaceId, itemIds });
+    res.json({ count: items.length });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// PATCH /spaces/:spaceId/items/bulk-move — move multiple items to a folder (contributor+)
+router.patch('/items/bulk-move', authenticate, isMember, async (req, res) => {
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can move items' });
+    return;
+  }
+
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  const { itemIds, folderId: folderIdRaw } = req.body as { itemIds?: unknown; folderId?: unknown };
+  if (!Array.isArray(itemIds) || itemIds.some((id) => typeof id !== 'string')) {
+    res.status(400).json({ error: 'itemIds must be an array of strings' });
+    return;
+  }
+
+  let folderId: number | null = null;
+  if (folderIdRaw != null) {
+    if (typeof folderIdRaw !== 'number' || !Number.isFinite(folderIdRaw)) {
+      res.status(400).json({ error: 'folderId must be a number or null' });
+      return;
+    }
+    const folder = await getFolderById(folderIdRaw);
+    if (!folder || folder.space_id !== spaceId || folder.deleted) {
+      res.status(404).json({ error: 'Target folder not found in this space' });
+      return;
+    }
+    folderId = folderIdRaw;
+  }
+
+  if (itemIds.length === 0) {
+    res.json({ count: 0 });
+    return;
+  }
+
+  try {
+    const items = await bulkMoveSpaceItems({ spaceId, itemIds, folderId });
+    res.json({ count: items.length });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

@@ -253,6 +253,38 @@ export const downloadSelected = async ({
   URL.revokeObjectURL(url);
 };
 
+export const bulkTrashSelected = ({
+  spaceId,
+  token,
+  itemIds,
+}: {
+  spaceId: number;
+  token: string;
+  itemIds: string[];
+}) =>
+  axios.post<{ count: number }>(
+    `${API}/spaces/${spaceId}/items/bulk-trash`,
+    { itemIds },
+    authHeaders(token),
+  );
+
+export const bulkMoveSelected = ({
+  spaceId,
+  token,
+  itemIds,
+  folderId,
+}: {
+  spaceId: number;
+  token: string;
+  itemIds: string[];
+  folderId: number | null;
+}) =>
+  axios.patch<{ count: number }>(
+    `${API}/spaces/${spaceId}/items/bulk-move`,
+    { itemIds, folderId },
+    authHeaders(token),
+  );
+
 export const likeSpaceItem = ({
   spaceId,
   itemId,

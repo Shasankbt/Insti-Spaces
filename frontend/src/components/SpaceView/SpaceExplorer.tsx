@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  bulkMoveSelected,
+  bulkTrashSelected,
   deleteSpaceItem,
   downloadSelected,
   emptySpaceTrash,
@@ -117,6 +119,10 @@ export default function SpaceExplorer({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<number>>(new Set());
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveTarget, setBulkMoveTarget] = useState<string>('root');
+  const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
+  const [bulkMoveError, setBulkMoveError] = useState<string | null>(null);
 
   const toggleSelectMode = () => {
     setSelectMode((prev) => {
@@ -151,6 +157,41 @@ export default function SpaceExplorer({
       itemIds: [...selectedItemIds],
       folderIds: [...selectedFolderIds],
     });
+  };
+
+  const handleBulkTrash = async () => {
+    if (selectedItemIds.size === 0) return;
+    const confirmed = window.confirm(`Move ${selectedItemIds.size} item(s) to trash?`);
+    if (!confirmed) return;
+    try {
+      await bulkTrashSelected({ spaceId: space.id, token, itemIds: [...selectedItemIds] });
+      setSelectedItemIds(new Set());
+      await refreshItems();
+    } catch {
+      window.alert('Bulk trash failed');
+    }
+  };
+
+  const submitBulkMove = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const folderId = bulkMoveTarget === 'root' ? null : Number(bulkMoveTarget);
+    if (bulkMoveTarget !== 'root' && !Number.isInteger(folderId)) {
+      setBulkMoveError('Invalid folder selection');
+      return;
+    }
+    setBulkMoveError(null);
+    try {
+      setBulkMoveLoading(true);
+      await bulkMoveSelected({ spaceId: space.id, token, itemIds: [...selectedItemIds], folderId });
+      setBulkMoveOpen(false);
+      setSelectedItemIds(new Set());
+      await refreshItems();
+      await refreshFolders();
+    } catch {
+      setBulkMoveError('Move failed');
+    } finally {
+      setBulkMoveLoading(false);
+    }
   };
 
   const handleCopyLink = async (item: DeltaItem) => {
@@ -481,6 +522,14 @@ export default function SpaceExplorer({
           )}
           {viewMode === 'files' && selectMode && totalSelected > 0 && (
             <button onClick={handleDownload}>Download ({totalSelected})</button>
+          )}
+          {viewMode === 'files' && selectMode && selectedItemIds.size > 0 && canManageTrash(role) && (
+            <button onClick={() => { void handleBulkTrash(); }}>Trash ({selectedItemIds.size})</button>
+          )}
+          {viewMode === 'files' && selectMode && selectedItemIds.size > 0 && canWrite(role) && (
+            <button onClick={() => { setBulkMoveTarget('root'); setBulkMoveError(null); setBulkMoveOpen(true); }}>
+              Move ({selectedItemIds.size})
+            </button>
           )}
           {viewMode === 'files' && (
             <button onClick={toggleSelectMode}>
@@ -839,6 +888,42 @@ export default function SpaceExplorer({
           onCreated={() => void refreshFolders()}
           onClose={() => setShowNewFolder(false)}
         />
+      )}
+
+      {bulkMoveOpen && (
+        <Modal
+          title={<>Move {selectedItemIds.size} item(s)</>}
+          onClose={() => {
+            if (!bulkMoveLoading) {
+              setBulkMoveOpen(false);
+              setBulkMoveError(null);
+            }
+          }}
+        >
+          <form className="modal__form" onSubmit={(e) => { void submitBulkMove(e); }}>
+            <select
+              className="modal__input"
+              value={bulkMoveTarget}
+              onChange={(e) => setBulkMoveTarget(e.target.value)}
+              disabled={bulkMoveLoading}
+            >
+              <option value="root">Root (no folder)</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={String(folder.id)}>
+                  {folder.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="modal__btn modal__btn--primary modal__btn--full"
+              disabled={bulkMoveLoading}
+            >
+              {bulkMoveLoading ? 'Moving…' : 'Move'}
+            </button>
+            {bulkMoveError && <p className="modal__error">{bulkMoveError}</p>}
+          </form>
+        </Modal>
       )}
 
       {moveItem && (
