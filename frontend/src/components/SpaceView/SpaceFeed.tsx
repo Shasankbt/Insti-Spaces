@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getSpacePageView, likeSpaceItem } from '../../Api';
+import { itemFileUrl, itemThumbnailUrl } from '../../utils';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import type { SpacePhoto } from '../../types';
 
@@ -11,6 +13,7 @@ interface SpaceFeedProps {
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
 
 export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
+  const navigate = useNavigate();
   const [photos, setPhotos] = useState<SpacePhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,7 +267,7 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               onClick={() => setActiveIndex(index)}
             >
               <AuthenticatedImage
-                src={photo.thumbnailUrl}
+                src={itemThumbnailUrl(spaceId, photo.photoId)}
                 token={token}
                 alt={photo.displayName}
                 loading="lazy"
@@ -318,7 +321,7 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               />
               {isVideoMime(activePhoto.mimeType) ? (
                 <AuthenticatedVideo
-                  src={activePhoto.fileUrl}
+                  src={itemFileUrl(spaceId, activePhoto.photoId)}
                   token={token}
                   className="space-feed__lightbox-video"
                   controls
@@ -340,7 +343,7 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                 />
               ) : (
                 <AuthenticatedImage
-                  src={activePhoto.fileUrl}
+                  src={itemFileUrl(spaceId, activePhoto.photoId)}
                   token={token}
                   alt={activePhoto.displayName}
                   className="space-feed__lightbox-image"
@@ -352,9 +355,18 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               )}
               {likeBurstVisible && <div className="space-feed__like-burst">♥</div>}
             </div>
-            <p className="space-feed__like-meta">
-              <span>{activePhoto.likeCount} like{activePhoto.likeCount === 1 ? '' : 's'}</span>
-            </p>
+            <div className="space-feed__lightbox-footer">
+              <p className="space-feed__like-meta">
+                <span>{activePhoto.likeCount} like{activePhoto.likeCount === 1 ? '' : 's'}</span>
+              </p>
+              <button
+                type="button"
+                className="space-feed__lightbox-view-full"
+                onClick={() => navigate(`/spaces/${spaceId}/view/${activePhoto.photoId}`)}
+              >
+                View in full
+              </button>
+            </div>
           </div>
         </div>
       )}

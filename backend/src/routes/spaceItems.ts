@@ -14,7 +14,6 @@ import {
   bulkMoveSpaceItemsToTrash,
   getExistingContentHashes,
   getItemById,
-  getItemByMediaPath,
   getItemsByIds,
   getItemsInFolderPage,
   getItemsInFolderSince,
@@ -39,7 +38,6 @@ import {
 } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
 import { validateContentHashes } from '../validation';
-import { toMediaUrl } from '../utils/media';
 
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
@@ -61,10 +59,8 @@ const uploadLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const toItemResponse = (spaceId: number, item: {
+const toItemResponse = (_spaceId: number, item: {
   photo_id: string;
-  thumbnail_path: string;
-  file_path: string;
   display_name: string;
   uploaded_at: Date;
   mime_type: string;
@@ -77,8 +73,6 @@ const toItemResponse = (spaceId: number, item: {
 
   return {
     itemId: item.photo_id,
-    thumbnailUrl: toMediaUrl(spaceId, item.thumbnail_path),
-    fileUrl: toMediaUrl(spaceId, item.file_path),
     displayName: item.display_name,
     uploadedAt: item.uploaded_at,
     mimeType: item.mime_type,
@@ -310,7 +304,16 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 };
 
-// GET /spaces/:spaceId/explorer?path=FolderA/SubfolderB — browse a directory
+// GET /spaces/:spaceId/explorer?path=FolderA/SubfolderB
+//
+// Translates a human-readable URL path (e.g. "FolderA/SubfolderB") into folder
+// metadata (id, name, parentId) and breadcrumbs. Does NOT return file items.
+//
+// Called by the frontend whenever the user navigates into a folder. The folder
+// names in the URL are resolved one segment at a time against the DB, so the
+// response gives the integer folder_id needed to then call GET /items?folder_id=<n>.
+//
+// Returns: { currentFolder: { id, name, parentId } | null, breadcrumbs: [...] }
 router.get('/explorer', authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
@@ -414,46 +417,78 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/media/:kind/:filename — authenticated media delivery
-// Accepts Bearer token in Authorization header OR ?t=<token> query param so that
-// the browser's native <video> element can make range requests for seeking.
-router.get('/media/:kind/:filename', (req, res, next) => {
+// GET /spaces/:spaceId/items/:itemId/file — serve item file by ID (no path exposed to client)
+// Accepts ?t=<token> so native <video> range requests work.
+router.get('/items/:itemId/file', (req, res, next) => {
   if (!req.headers.authorization && req.query.t) {
     req.headers.authorization = `Bearer ${req.query.t as string}`;
   }
   next();
 }, authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
-  const { kind, filename } = req.params as { kind?: string; filename?: string };
+  const itemId = req.params.itemId as string;
 
-  if (!spaceId || !kind || !filename) {
-    res.status(400).json({ error: 'Invalid media request' });
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid request' });
     return;
   }
-
-  if (!['originals', 'thumbnails'].includes(kind) || filename !== path.basename(filename)) {
-    res.status(400).json({ error: 'Invalid media path' });
-    return;
-  }
-
-  const mediaPath = path.join('spaces', String(spaceId), kind, filename);
 
   try {
-    const item = await getItemByMediaPath({ spaceId, mediaPath });
+    const item = await getItemById({ spaceId, itemId });
     if (!item) {
-      res.status(404).json({ error: 'Media not found' });
+      res.status(404).json({ error: 'Item not found' });
       return;
     }
+
     const uploadsRoot = path.resolve(UPLOADS_ROOT);
-    const absolutePath = path.resolve(uploadsRoot, mediaPath);
+    const absolutePath = path.resolve(uploadsRoot, item.file_path);
     if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
-      res.status(400).json({ error: 'Invalid media path' });
+      res.status(400).json({ error: 'Invalid file path' });
       return;
     }
 
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.sendFile(absolutePath, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ error: 'Media not found' });
+      if (err && !res.headersSent) res.status(404).json({ error: 'File not found' });
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/items/:itemId/thumbnail — serve item thumbnail by ID
+router.get('/items/:itemId/thumbnail', (req, res, next) => {
+  if (!req.headers.authorization && req.query.t) {
+    req.headers.authorization = `Bearer ${req.query.t as string}`;
+  }
+  next();
+}, authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const itemId = req.params.itemId as string;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid request' });
+    return;
+  }
+
+  try {
+    const item = await getItemById({ spaceId, itemId });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found' });
+      return;
+    }
+
+    const uploadsRoot = path.resolve(UPLOADS_ROOT);
+    const absolutePath = path.resolve(uploadsRoot, item.thumbnail_path);
+    if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
+      res.status(400).json({ error: 'Invalid file path' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.sendFile(absolutePath, (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'Thumbnail not found' });
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';

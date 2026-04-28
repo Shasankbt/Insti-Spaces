@@ -57,8 +57,6 @@ export interface RoleRequest {
 
 export interface SpacePhoto {
   photoId: string;
-  thumbnailUrl: string;
-  fileUrl: string;
   displayName: string;
   uploadedAt: string;
   mimeType: string;
@@ -68,8 +66,6 @@ export interface SpacePhoto {
 
 export interface SpaceItem {
   itemId: string;
-  thumbnailUrl: string;
-  fileUrl: string;
   displayName: string;
   uploadedAt: string;
   mimeType: string;

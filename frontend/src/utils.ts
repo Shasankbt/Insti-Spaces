@@ -1,3 +1,11 @@
+import { API_BASE } from './constants';
+
+export const itemFileUrl = (spaceId: number | string, itemId: string): string =>
+  `${API_BASE}/spaces/${spaceId}/items/${itemId}/file`;
+
+export const itemThumbnailUrl = (spaceId: number | string, itemId: string): string =>
+  `${API_BASE}/spaces/${spaceId}/items/${itemId}/thumbnail`;
+
 /**
  * Merge an incoming delta (array of rows) into an existing id-keyed map.
  * Rows with deleted=true are removed; everything else is upserted.

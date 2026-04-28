@@ -19,6 +19,7 @@ import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
 import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL, TRASH_LIMIT } from '../../constants';
+import { itemFileUrl, itemThumbnailUrl } from '../../utils';
 
 interface SpaceExplorerProps {
   space: Space;
@@ -195,10 +196,7 @@ export default function SpaceExplorer({
   };
 
   const handleCopyLink = async (item: DeltaItem) => {
-    const link = new URL('/media', window.location.origin);
-    link.searchParams.set('src', item.fileUrl);
-    link.searchParams.set('name', item.displayName);
-    link.searchParams.set('type', item.mimeType);
+    const link = new URL(`/spaces/${space.id}/view/${item.itemId}`, window.location.origin);
 
     try {
       await copyToClipboard(link.toString());
@@ -619,7 +617,7 @@ export default function SpaceExplorer({
                     title={item.displayName}
                   >
                     <AuthenticatedImage
-                      src={item.thumbnailUrl}
+                      src={itemThumbnailUrl(space.id, item.itemId)}
                       token={token}
                       alt={item.displayName}
                       loading="lazy"
@@ -696,7 +694,7 @@ export default function SpaceExplorer({
                     title={item.displayName}
                   >
                     <AuthenticatedImage
-                      src={item.thumbnailUrl}
+                      src={itemThumbnailUrl(space.id, item.itemId)}
                       token={token}
                       alt={item.displayName}
                       loading="lazy"
@@ -859,7 +857,7 @@ export default function SpaceExplorer({
               />
               {isVideoMime(activeItem.mimeType) ? (
                 <AuthenticatedVideo
-                  src={activeItem.fileUrl}
+                  src={itemFileUrl(space.id, activeItem.itemId)}
                   token={token}
                   className="space-explorer__lightbox-video"
                   controls
@@ -868,14 +866,23 @@ export default function SpaceExplorer({
                 />
               ) : (
                 <AuthenticatedImage
-                  src={activeItem.fileUrl}
+                  src={itemFileUrl(space.id, activeItem.itemId)}
                   token={token}
                   alt={activeItem.displayName}
                   className="space-explorer__lightbox-image"
                 />
               )}
             </div>
-            <p className="space-explorer__lightbox-name">{activeItem.displayName}</p>
+            <div className="space-explorer__lightbox-footer">
+              <p className="space-explorer__lightbox-name">{activeItem.displayName}</p>
+              <button
+                type="button"
+                className="space-explorer__lightbox-view-full"
+                onClick={() => navigate(`/spaces/${space.id}/view/${activeItem.itemId}`)}
+              >
+                View in full
+              </button>
+            </div>
           </div>
         </div>
       )}

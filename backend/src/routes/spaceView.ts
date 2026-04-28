@@ -7,7 +7,6 @@ import {
   getLikeSummaryForItems,
 } from '../db';
 import { parseSpaceId } from './spacesHelpers';
-import { toMediaUrl } from '../utils/media';
 
 const router = Router({ mergeParams: true });
 
@@ -70,8 +69,6 @@ router.get('/pageview', authenticate, isMember, async (req, res) => {
 
     const photos = items.map((item) => ({
       photoId: item.photo_id,
-      thumbnailUrl: toMediaUrl(spaceId, item.thumbnail_path),
-      fileUrl: toMediaUrl(spaceId, item.file_path),
       displayName: item.display_name,
       uploadedAt: item.uploaded_at,
       mimeType: item.mime_type,
