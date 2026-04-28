@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  bulkMoveSelected,
-  bulkTrashSelected,
-  deleteSpaceItem,
+  copyItems,
   downloadSelected,
   emptySpaceTrash,
   getSpaceExplorer,
   getSpaceTrash,
-  moveSpaceItem,
+  moveItems,
   permanentlyDeleteSpaceTrashItem,
   renameSpaceItem,
   restoreSpaceTrashItem,
+  trashItems as trashItemsApi,
 } from '../../Api';
+import type { ConflictResolution, ItemConflict } from '../../Api';
 import { useDeltaSync } from '../../hooks/useDeltaSync';
 import type { ExplorerFolder, Role, Space, SpaceItem } from '../../types';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
@@ -124,6 +124,18 @@ export default function SpaceExplorer({
   const [bulkMoveTarget, setBulkMoveTarget] = useState<string>('root');
   const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
   const [bulkMoveError, setBulkMoveError] = useState<string | null>(null);
+  const [bulkCopyOpen, setBulkCopyOpen] = useState(false);
+  const [bulkCopyTarget, setBulkCopyTarget] = useState<string>('root');
+  const [bulkCopyLoading, setBulkCopyLoading] = useState(false);
+  const [bulkCopyError, setBulkCopyError] = useState<string | null>(null);
+  const [copyItem, setCopyItem] = useState<DeltaItem | null>(null);
+  const [copyTargetFolder, setCopyTargetFolder] = useState<string>('root');
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
+  const [pendingConflicts, setPendingConflicts] = useState<ItemConflict[]>([]);
+  const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
+  const [pendingRetry, setPendingRetry] = useState<((res: Record<string, ConflictResolution>) => Promise<void>) | null>(null);
 
   const toggleSelectMode = () => {
     setSelectMode((prev) => {
@@ -160,38 +172,97 @@ export default function SpaceExplorer({
     });
   };
 
+  const openConflictModal = (
+    conflicts: ItemConflict[],
+    retry: (res: Record<string, ConflictResolution>) => Promise<void>,
+  ) => {
+    setPendingConflicts(conflicts);
+    setConflictResolutions(Object.fromEntries(conflicts.map((c) => [c.itemId, 'skip' as ConflictResolution])));
+    setPendingRetry(() => retry);
+    setConflictModalOpen(true);
+  };
+
   const handleBulkTrash = async () => {
-    if (selectedItemIds.size === 0) return;
-    const confirmed = window.confirm(`Move ${selectedItemIds.size} item(s) to trash?`);
-    if (!confirmed) return;
+    const fileIds = [...selectedItemIds];
+    // TODO: folder trash not yet supported — selectedFolderIds are skipped
+    if (fileIds.length === 0) return;
+    if (!window.confirm(`Move ${fileIds.length} item(s) to trash?`)) return;
     try {
-      await bulkTrashSelected({ spaceId: space.id, token, itemIds: [...selectedItemIds] });
+      await trashItemsApi({ spaceId: space.id, token, itemIds: fileIds });
       setSelectedItemIds(new Set());
+      setSelectedFolderIds(new Set());
       await refreshItems();
     } catch {
-      window.alert('Bulk trash failed');
+      window.alert('Trash failed');
     }
   };
 
-  const submitBulkMove = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submitBulkMove = async (
+    e: React.FormEvent<HTMLFormElement>,
+    resolutions?: Record<string, ConflictResolution>,
+  ) => {
     e.preventDefault();
     const folderId = bulkMoveTarget === 'root' ? null : Number(bulkMoveTarget);
     if (bulkMoveTarget !== 'root' && !Number.isInteger(folderId)) {
       setBulkMoveError('Invalid folder selection');
       return;
     }
+    const fileIds = [...selectedItemIds];
+    // TODO: folder move not yet supported — selectedFolderIds are skipped
     setBulkMoveError(null);
     try {
       setBulkMoveLoading(true);
-      await bulkMoveSelected({ spaceId: space.id, token, itemIds: [...selectedItemIds], folderId });
+      await moveItems({ spaceId: space.id, token, itemIds: fileIds, folderId, resolutions });
       setBulkMoveOpen(false);
       setSelectedItemIds(new Set());
+      setSelectedFolderIds(new Set());
       await refreshItems();
       await refreshFolders();
-    } catch {
-      setBulkMoveError('Move failed');
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
+      if (data?.conflicts) {
+        setBulkMoveOpen(false);
+        openConflictModal(data.conflicts, async (res) => {
+          await submitBulkMove(e, res);
+        });
+      } else {
+        setBulkMoveError('Move failed');
+      }
     } finally {
       setBulkMoveLoading(false);
+    }
+  };
+
+  const submitBulkCopy = async (
+    e: React.FormEvent<HTMLFormElement>,
+    resolutions?: Record<string, ConflictResolution>,
+  ) => {
+    e.preventDefault();
+    const folderId = bulkCopyTarget === 'root' ? null : Number(bulkCopyTarget);
+    if (bulkCopyTarget !== 'root' && !Number.isInteger(folderId)) {
+      setBulkCopyError('Invalid folder selection');
+      return;
+    }
+    const fileIds = [...selectedItemIds];
+    // TODO: folder copy not yet supported — selectedFolderIds are skipped
+    setBulkCopyError(null);
+    try {
+      setBulkCopyLoading(true);
+      await copyItems({ spaceId: space.id, token, itemIds: fileIds, folderId, resolutions });
+      setBulkCopyOpen(false);
+      await refreshItems();
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
+      if (data?.conflicts) {
+        setBulkCopyOpen(false);
+        openConflictModal(data.conflicts, async (res) => {
+          await submitBulkCopy(e, res);
+        });
+      } else {
+        setBulkCopyError('Copy failed');
+      }
+    } finally {
+      setBulkCopyLoading(false);
     }
   };
 
@@ -234,7 +305,10 @@ export default function SpaceExplorer({
     setMoveTargetFolder(item.folderId == null ? 'root' : String(item.folderId));
   };
 
-  const submitMoveToFolder = async (e: React.FormEvent<HTMLFormElement>) => {
+  const submitMoveToFolder = async (
+    e: React.FormEvent<HTMLFormElement>,
+    resolutions?: Record<string, ConflictResolution>,
+  ) => {
     e.preventDefault();
     if (!moveItem) return;
 
@@ -244,7 +318,7 @@ export default function SpaceExplorer({
       return;
     }
 
-    if (folderId === moveItem.folderId) {
+    if (folderId === moveItem.folderId && !resolutions) {
       setMoveItem(null);
       return;
     }
@@ -252,19 +326,63 @@ export default function SpaceExplorer({
     setMoveError(null);
     try {
       setMoveLoading(true);
-      await moveSpaceItem({
-        spaceId: space.id,
-        itemId: moveItem.itemId,
-        folderId,
-        token,
-      });
+      await moveItems({ spaceId: space.id, token, itemIds: [moveItem.itemId], folderId, resolutions });
       setMoveItem(null);
       await refreshItems();
       await refreshFolders();
-    } catch {
-      setMoveError('Move failed');
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
+      if (data?.conflicts) {
+        setMoveItem(null);
+        openConflictModal(data.conflicts, async (res) => {
+          await submitMoveToFolder(e, res);
+        });
+      } else {
+        setMoveError('Move failed');
+      }
     } finally {
       setMoveLoading(false);
+    }
+  };
+
+  const handleCopyToFolder = (item: DeltaItem) => {
+    setOpenMenuId(null);
+    setCopyError(null);
+    setCopyItem(item);
+    setCopyTargetFolder(item.folderId == null ? 'root' : String(item.folderId));
+  };
+
+  const submitCopyToFolder = async (
+    e: React.FormEvent<HTMLFormElement>,
+    resolutions?: Record<string, ConflictResolution>,
+  ) => {
+    e.preventDefault();
+    if (!copyItem) return;
+
+    const folderId = copyTargetFolder === 'root' ? null : Number(copyTargetFolder);
+    if (copyTargetFolder !== 'root' && !Number.isInteger(folderId)) {
+      setCopyError('Invalid folder selection');
+      return;
+    }
+
+    setCopyError(null);
+    try {
+      setCopyLoading(true);
+      await copyItems({ spaceId: space.id, token, itemIds: [copyItem.itemId], folderId, resolutions });
+      setCopyItem(null);
+      await refreshItems();
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
+      if (data?.conflicts) {
+        setCopyItem(null);
+        openConflictModal(data.conflicts, async (res) => {
+          await submitCopyToFolder(e, res);
+        });
+      } else {
+        setCopyError('Copy failed');
+      }
+    } finally {
+      setCopyLoading(false);
     }
   };
 
@@ -273,7 +391,7 @@ export default function SpaceExplorer({
     if (!confirmed) return;
 
     try {
-      await deleteSpaceItem({ spaceId: space.id, itemId: item.itemId, token });
+      await trashItemsApi({ spaceId: space.id, token, itemIds: [item.itemId] });
       setOpenMenuId(null);
       setSelectedItem((prev) => (prev?.itemId === item.itemId ? null : prev));
       setSelectedItemIds((prev) => {
@@ -521,12 +639,17 @@ export default function SpaceExplorer({
           {viewMode === 'files' && selectMode && totalSelected > 0 && (
             <button onClick={handleDownload}>Download ({totalSelected})</button>
           )}
-          {viewMode === 'files' && selectMode && selectedItemIds.size > 0 && canManageTrash(role) && (
-            <button onClick={() => { void handleBulkTrash(); }}>Trash ({selectedItemIds.size})</button>
+          {viewMode === 'files' && selectMode && totalSelected > 0 && canManageTrash(role) && (
+            <button onClick={() => { void handleBulkTrash(); }}>Trash ({totalSelected})</button>
           )}
-          {viewMode === 'files' && selectMode && selectedItemIds.size > 0 && canWrite(role) && (
+          {viewMode === 'files' && selectMode && totalSelected > 0 && canWrite(role) && (
             <button onClick={() => { setBulkMoveTarget('root'); setBulkMoveError(null); setBulkMoveOpen(true); }}>
-              Move ({selectedItemIds.size})
+              Move ({totalSelected})
+            </button>
+          )}
+          {viewMode === 'files' && selectMode && totalSelected > 0 && canWrite(role) && (
+            <button onClick={() => { setBulkCopyTarget('root'); setBulkCopyError(null); setBulkCopyOpen(true); }}>
+              Copy ({totalSelected})
             </button>
           )}
           {viewMode === 'files' && (
@@ -741,6 +864,13 @@ export default function SpaceExplorer({
                       className="space-explorer__menu-item"
                       onClick={() => { handleMoveToFolder(item); }}
                     >Move to folder</button>
+                    {canWrite(role) && (
+                      <button
+                        type="button"
+                        className="space-explorer__menu-item"
+                        onClick={() => { handleCopyToFolder(item); }}
+                      >Copy to folder</button>
+                    )}
                     <button
                       type="button"
                       className="space-explorer__menu-item"
@@ -970,6 +1100,125 @@ export default function SpaceExplorer({
             </button>
             {moveError && <p className="modal__error">{moveError}</p>}
           </form>
+        </Modal>
+      )}
+
+      {copyItem && (
+        <Modal
+          title={
+            <>
+              Copy <span className="modal__title-accent">{copyItem.displayName}</span>
+            </>
+          }
+          onClose={() => {
+            if (!copyLoading) {
+              setCopyItem(null);
+              setCopyError(null);
+            }
+          }}
+        >
+          <form className="modal__form" onSubmit={(e) => { void submitCopyToFolder(e); }}>
+            <select
+              className="modal__input"
+              value={copyTargetFolder}
+              onChange={(e) => setCopyTargetFolder(e.target.value)}
+              disabled={copyLoading}
+            >
+              <option value="root">Root (no folder)</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={String(folder.id)}>
+                  {folder.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="modal__btn modal__btn--primary modal__btn--full"
+              disabled={copyLoading}
+            >
+              {copyLoading ? 'Copying…' : 'Copy'}
+            </button>
+            {copyError && <p className="modal__error">{copyError}</p>}
+          </form>
+        </Modal>
+      )}
+
+      {bulkCopyOpen && (
+        <Modal
+          title={<>Copy {selectedItemIds.size} item(s)</>}
+          onClose={() => {
+            if (!bulkCopyLoading) {
+              setBulkCopyOpen(false);
+              setBulkCopyError(null);
+            }
+          }}
+        >
+          <form className="modal__form" onSubmit={(e) => { void submitBulkCopy(e); }}>
+            <select
+              className="modal__input"
+              value={bulkCopyTarget}
+              onChange={(e) => setBulkCopyTarget(e.target.value)}
+              disabled={bulkCopyLoading}
+            >
+              <option value="root">Root (no folder)</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={String(folder.id)}>
+                  {folder.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="modal__btn modal__btn--primary modal__btn--full"
+              disabled={bulkCopyLoading}
+            >
+              {bulkCopyLoading ? 'Copying…' : 'Copy'}
+            </button>
+            {bulkCopyError && <p className="modal__error">{bulkCopyError}</p>}
+          </form>
+        </Modal>
+      )}
+
+      {conflictModalOpen && (
+        <Modal
+          title="Name conflicts"
+          onClose={() => {
+            setConflictModalOpen(false);
+            setPendingRetry(null);
+          }}
+        >
+          <div className="modal__form">
+            <p className="modal__hint">These items already exist in the destination. Choose what to do for each:</p>
+            {pendingConflicts.map((conflict) => (
+              <div key={conflict.itemId} className="modal__conflict-row">
+                <span className="modal__conflict-name">{conflict.displayName}</span>
+                <select
+                  className="modal__input modal__input--sm"
+                  value={conflictResolutions[conflict.itemId] ?? 'skip'}
+                  onChange={(e) =>
+                    setConflictResolutions((prev) => ({
+                      ...prev,
+                      [conflict.itemId]: e.target.value as ConflictResolution,
+                    }))
+                  }
+                >
+                  <option value="skip">Skip</option>
+                  <option value="replace">Replace</option>
+                  <option value="keep_both">Keep both</option>
+                </select>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="modal__btn modal__btn--primary modal__btn--full"
+              onClick={() => {
+                setConflictModalOpen(false);
+                void pendingRetry?.(conflictResolutions);
+              }}
+            >
+              Continue
+            </button>
+          </div>
         </Modal>
       )}
     </section>

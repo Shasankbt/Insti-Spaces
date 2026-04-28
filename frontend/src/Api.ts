@@ -253,7 +253,10 @@ export const downloadSelected = async ({
   URL.revokeObjectURL(url);
 };
 
-export const bulkTrashSelected = ({
+export type ItemConflict = { itemId: string; displayName: string };
+export type ConflictResolution = 'skip' | 'replace' | 'keep_both';
+
+export const trashItems = ({
   spaceId,
   token,
   itemIds,
@@ -263,25 +266,46 @@ export const bulkTrashSelected = ({
   itemIds: string[];
 }) =>
   axios.post<{ count: number }>(
-    `${API}/spaces/${spaceId}/items/bulk-trash`,
+    `${API}/spaces/${spaceId}/item-action/trash`,
     { itemIds },
     authHeaders(token),
   );
 
-export const bulkMoveSelected = ({
+export const moveItems = ({
   spaceId,
   token,
   itemIds,
   folderId,
+  resolutions,
 }: {
   spaceId: number;
   token: string;
   itemIds: string[];
   folderId: number | null;
+  resolutions?: Record<string, ConflictResolution>;
 }) =>
-  axios.patch<{ count: number }>(
-    `${API}/spaces/${spaceId}/items/bulk-move`,
-    { itemIds, folderId },
+  axios.patch<{ count: number; skipped: number }>(
+    `${API}/spaces/${spaceId}/item-action/move`,
+    { itemIds, folderId, resolutions },
+    authHeaders(token),
+  );
+
+export const copyItems = ({
+  spaceId,
+  token,
+  itemIds,
+  folderId,
+  resolutions,
+}: {
+  spaceId: number;
+  token: string;
+  itemIds: string[];
+  folderId: number | null;
+  resolutions?: Record<string, ConflictResolution>;
+}) =>
+  axios.post<{ count: number; skipped: number }>(
+    `${API}/spaces/${spaceId}/item-action/copy`,
+    { itemIds, folderId, resolutions },
     authHeaders(token),
   );
 
@@ -317,32 +341,6 @@ export const renameSpaceItem = ({
     authHeaders(token),
   );
 
-export const moveSpaceItem = ({
-  spaceId,
-  itemId,
-  folderId,
-  token,
-}: {
-  spaceId: number;
-  itemId: string;
-  folderId: number | null;
-  token: string;
-}) =>
-  axios.patch(
-    `${API}/spaces/${spaceId}/items/${itemId}/move`,
-    { folderId },
-    authHeaders(token),
-  );
-
-export const deleteSpaceItem = ({
-  spaceId,
-  itemId,
-  token,
-}: {
-  spaceId: number;
-  itemId: string;
-  token: string;
-}) => axios.delete(`${API}/spaces/${spaceId}/items/${itemId}`, authHeaders(token));
 
 export const getSpaceTrash = ({
   spaceId,

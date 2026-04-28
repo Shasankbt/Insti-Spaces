@@ -22,6 +22,7 @@ import spaceViewRouter from './spaceView';
 import spaceRolesRouter from './spaceRoles';
 import spaceItemsRouter from './spaceItems';
 import spaceFoldersRouter from './spaceFolders';
+import spaceItemActionsRouter from './spaceItemActions';
 
 const router = express.Router();
 
@@ -31,6 +32,7 @@ router.use('/:spaceId', spaceViewRouter);
 router.use('/:spaceId', spaceRolesRouter);
 router.use('/:spaceId', spaceItemsRouter);
 router.use('/:spaceId', spaceFoldersRouter);
+router.use('/:spaceId', spaceItemActionsRouter);
 
 // ── space lifecycle ───────────────────────────────────────────────────────────
 

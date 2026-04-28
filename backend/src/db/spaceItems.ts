@@ -377,6 +377,85 @@ export const bulkMoveSpaceItems = async ({
   return rows;
 };
 
+export const getConflictingDisplayNames = async ({
+  spaceId,
+  folderId,
+  candidateNames,
+}: {
+  spaceId: number;
+  folderId: number | null;
+  candidateNames: string[];
+}): Promise<string[]> => {
+  const existing = await getDisplayNamesInFolder({ spaceId, folderId });
+  const existingSet = new Set(existing);
+  return candidateNames.filter((n) => existingSet.has(n));
+};
+
+export const getItemByDisplayNameInFolder = async ({
+  spaceId,
+  folderId,
+  displayName,
+}: {
+  spaceId: number;
+  folderId: number | null;
+  displayName: string;
+}): Promise<string | null> => {
+  const { rows } = await pool.query<{ photo_id: string }>(
+    `SELECT photo_id
+     FROM space_items
+     WHERE space_id = $1
+       AND folder_id IS NOT DISTINCT FROM $2
+       AND display_name = $3
+       AND deleted = false
+       AND trashed_at IS NULL
+     LIMIT 1`,
+    [spaceId, folderId, displayName],
+  );
+  return rows[0]?.photo_id ?? null;
+};
+
+export const softDeleteSpaceItem = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<boolean> => {
+  const { rowCount } = await pool.query(
+    `UPDATE space_items
+     SET deleted = true
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false`,
+    [spaceId, itemId],
+  );
+  return (rowCount ?? 0) > 0;
+};
+
+export const moveAndRenameSpaceItem = async ({
+  spaceId,
+  itemId,
+  folderId,
+  displayName,
+}: {
+  spaceId: number;
+  itemId: string;
+  folderId: number | null;
+  displayName: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `UPDATE space_items
+     SET folder_id = $3, display_name = $4
+     WHERE space_id = $1
+       AND photo_id = $2::uuid
+       AND deleted = false
+       AND trashed_at IS NULL
+     RETURNING *`,
+    [spaceId, itemId, folderId, displayName],
+  );
+  return rows[0] ?? null;
+};
+
 export const permanentlyDeleteTrashedSpaceItem = async ({
   spaceId,
   itemId,
