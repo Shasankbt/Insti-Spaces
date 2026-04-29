@@ -86,6 +86,26 @@ export function IconChevron(p: P) {
   );
 }
 
+export function IconChangeRole(p: P) {
+  return (
+    <svg viewBox="0 0 52 52" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" {...p}>
+      <path fill="currentColor" d="m27.3 37.6c-3-1.2-3.5-2.3-3.5-3.5 0-1.2 0.8-2.3 1.8-3.2 1.8-1.5 2.6-3.9 2.6-6.4 0-4.7-2.9-8.5-8.3-8.5s-8.3 3.8-8.3 8.5c0 2.5 0.8 4.9 2.6 6.4 1 0.9 1.8 2 1.8 3.2 0 1.2-0.5 2.3-3.5 3.5-4.4 1.8-8.6 3.8-8.7 7.6 0.2 2.6 2.2 4.8 4.7 4.8h23c2.5 0 4.5-2.2 4.5-4.7-0.1-3.8-4.3-5.9-8.7-7.7z m17.2-18.6c0-7.4-6.1-13.5-13.5-13.5v-3.5l-6.8 5.5c-0.3 0.3-0.2 0.8 0.1 1.1l6.7 5.4v-3.5c4.7 0 8.5 3.8 8.5 8.5h-3.5l5.5 6.8c0.3 0.3 0.8 0.3 1.1 0l5.4-6.8h-3.5z" />
+    </svg>
+  );
+}
+
+export function IconRemoveUser(p: P) {
+  return (
+    <svg viewBox="0 0 32 32" fill="none" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" {...p}>
+      <circle cx="14" cy="11" r="6" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" />
+      <path d="M5,26c0-4.971,4.029-9,9-9 c1.864,0,3.596,0.567,5.032,1.537" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" />
+      <circle cx="24" cy="24" r="7" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" />
+      <line x1="21" y1="27" x2="27" y2="21" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" />
+      <line x1="21" y1="21" x2="27" y2="27" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" />
+    </svg>
+  );
+}
+
 export function IconHome(p: P) {
   return (
     <svg viewBox="0 0 24 24" fill="none" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" {...p}>

@@ -103,8 +103,6 @@ export default function SpaceView() {
   return (
     <div className="space-view">
       <button onClick={() => void navigate('/spaces')}>← Back</button>
-      <h2>{space.spacename}</h2>
-      <p>Your role: {space.role}</p>
 
       {resumableUpload && (
         <div className="space-view__upload-resume-banner">
@@ -121,18 +119,6 @@ export default function SpaceView() {
           </button>
         </div>
       )}
-
-      <div>
-        {canInvite && <button onClick={() => setOpenModal('invite')}>Invite</button>}
-        {canUpload && <button onClick={() => setOpenModal('upload')}>Upload</button>}
-        {canRequestRole && (
-          <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
-        )}
-        {space.role === 'admin' && (
-          <button onClick={() => setOpenModal('delete')}>Delete Space</button>
-        )}
-        <button onClick={() => setOpenModal('leave')}>Leave</button>
-      </div>
 
       <nav className="space-tabs" aria-label="Space sections">
         {TABS.map((tab) => (
@@ -164,14 +150,6 @@ export default function SpaceView() {
 
         {activeTab === 'members' && (
           <div className="space-members-tab">
-            <div className="space-members-tab__actions">
-              {canInvite && (
-                <button onClick={() => setOpenModal('invite')}>Invite members</button>
-              )}
-              {canRequestRole && (
-                <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
-              )}
-            </div>
             <MembersList
               members={members}
               loading={membersLoading}
@@ -183,6 +161,8 @@ export default function SpaceView() {
               roleUpdateError={roleUpdateError}
               removingUserId={removingUserId}
               removeError={removeError}
+              onInvite={canInvite ? () => setOpenModal('invite') : undefined}
+              onRequestRole={canRequestRole ? () => setOpenModal('requestRole') : undefined}
             />
           </div>
         )}
