@@ -38,12 +38,17 @@ ON friend_requests (from_user_id, status, created_at DESC);
 -- ===================== spaces =====================
 CREATE TABLE IF NOT EXISTS spaces (
   id SERIAL PRIMARY KEY,
-  spacename VARCHAR(50) UNIQUE NOT NULL,
+  spacename VARCHAR(50) NOT NULL, -- Removed UNIQUE here
   owner_user_id INTEGER REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted BOOLEAN DEFAULT FALSE
 );
+
+-- Add this partial unique index:
+CREATE UNIQUE INDEX IF NOT EXISTS uq_spaces_owner_spacename 
+ON spaces (owner_user_id, spacename) 
+WHERE deleted = false;
 -- ----------------- space management ------------------
 CREATE TABLE IF NOT EXISTS following (
   userid INTEGER NOT NULL REFERENCES users(id),

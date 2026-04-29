@@ -18,7 +18,7 @@ const passwordSchema = z
   .string()
   .min(VALIDATION.PASSWORD_MIN, `password must be at least ${VALIDATION.PASSWORD_MIN} characters`)
   .max(VALIDATION.PASSWORD_MAX, `password must be at most ${VALIDATION.PASSWORD_MAX} characters`)
-  .regex(/[A-Za-z]/, 'password must include at least one letter')
+  .regex(/[A-Za-z0-9]/, 'password must include at least one letter')
   ;
 
 const registerBodySchema = z.object({
