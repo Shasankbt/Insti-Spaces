@@ -13,6 +13,7 @@ import {
   moveSpaceFolder,
   moveItems,
   permanentlyDeleteSpaceTrashItem,
+  getSpaceTrashFolderItems,
   permanentlyDeleteSpaceTrashFolder,
   renameSpaceItem,
   restoreSpaceTrashItem,
@@ -27,6 +28,13 @@ import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
 import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL, TRASH_LIMIT } from '../../constants';
 import { itemFileUrl, itemThumbnailUrl } from '../../utils';
+
+interface TrashNavEntry {
+  id: number;
+  name: string;
+  items: SpaceItem[];
+  subfolders: { id: number; name: string }[];
+}
 
 interface SpaceExplorerProps {
   space: Space;
@@ -115,6 +123,8 @@ export default function SpaceExplorer({
   const [selectedItem, setSelectedItem] = useState<DeltaItem | null>(null);
   const [trashItems, setTrashItems] = useState<SpaceItem[]>([]);
   const [trashFolders, setTrashFolders] = useState<TrashedFolder[]>([]);
+  const [trashNavStack, setTrashNavStack] = useState<TrashNavEntry[]>([]);
+  const [trashNavLoading, setTrashNavLoading] = useState(false);
   const [trashLoading, setTrashLoading] = useState(false);
   const [trashError, setTrashError] = useState<string | null>(null);
   const [trashActionId, setTrashActionId] = useState<string | null>(null);
@@ -557,6 +567,74 @@ export default function SpaceExplorer({
     }
   };
 
+  const openTrashFolder = async (folder: TrashedFolder) => {
+    setTrashNavLoading(true);
+    try {
+      const { data } = await getSpaceTrashFolderItems({ spaceId: space.id, folderId: folder.folderId, token });
+      setTrashNavStack([{ id: folder.folderId, name: folder.name, items: data.items ?? [], subfolders: data.folders ?? [] }]);
+    } catch {
+      // leave empty
+    } finally {
+      setTrashNavLoading(false);
+    }
+  };
+
+  const openTrashSubfolder = async (sub: { id: number; name: string }) => {
+    setTrashNavLoading(true);
+    try {
+      const { data } = await getSpaceTrashFolderItems({ spaceId: space.id, folderId: sub.id, token });
+      setTrashNavStack((prev) => [...prev, { id: sub.id, name: sub.name, items: data.items ?? [], subfolders: data.folders ?? [] }]);
+    } catch {
+      // leave empty
+    } finally {
+      setTrashNavLoading(false);
+    }
+  };
+
+  const handleRestoreTrashFolderItem = async (item: SpaceItem) => {
+    setTrashActionId(item.itemId);
+    setTrashError(null);
+    try {
+      await restoreSpaceTrashItem({ spaceId: space.id, itemId: item.itemId, token });
+      setTrashNavStack((prev) => {
+        if (prev.length === 0) return prev;
+        const updated = [...prev];
+        const last = updated[updated.length - 1]!;
+        updated[updated.length - 1] = { ...last, items: last.items.filter((i) => i.itemId !== item.itemId) };
+        return updated;
+      });
+      await refreshItems();
+      await refreshFolders();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
+      setTrashError(apiErr?.error ?? 'Restore failed');
+    } finally {
+      setTrashActionId(null);
+    }
+  };
+
+  const handleRestoreTrashSubfolder = async (sub: { id: number; name: string }) => {
+    setTrashActionId(`folder-${sub.id}`);
+    setTrashError(null);
+    try {
+      await restoreSpaceTrashFolder({ spaceId: space.id, folderId: sub.id, token });
+      setTrashNavStack((prev) => {
+        if (prev.length === 0) return prev;
+        const updated = [...prev];
+        const last = updated[updated.length - 1]!;
+        updated[updated.length - 1] = { ...last, subfolders: last.subfolders.filter((f) => f.id !== sub.id) };
+        return updated;
+      });
+      await refreshItems();
+      await refreshFolders();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
+      setTrashError(apiErr?.error ?? 'Restore failed');
+    } finally {
+      setTrashActionId(null);
+    }
+  };
+
   const handleRestoreTrashItem = async (item: SpaceItem) => {
     setTrashActionId(item.itemId);
     setTrashError(null);
@@ -885,8 +963,12 @@ export default function SpaceExplorer({
 
   const loading = viewMode === 'trash' ? trashLoading : metaLoading || itemsLoading;
   const error = viewMode === 'trash' ? trashError : metaError ?? itemsError;
-  const isEmpty =
-    viewMode === 'trash' ? trashItems.length === 0 && trashFolders.length === 0 : subfolders.length === 0 && displayItems.length === 0;
+  const currentNavEntry = trashNavStack.length > 0 ? trashNavStack[trashNavStack.length - 1] : null;
+  const isEmpty = viewMode === 'trash'
+    ? currentNavEntry
+      ? currentNavEntry.items.length === 0 && currentNavEntry.subfolders.length === 0
+      : trashItems.length === 0 && trashFolders.length === 0
+    : subfolders.length === 0 && displayItems.length === 0;
 
   return (
     <section className="space-explorer">
@@ -927,26 +1009,27 @@ export default function SpaceExplorer({
               setTrashHasMore(false);
               setTrashSelectMode(false);
               setSelectedTrashIds(new Set());
+              setTrashNavStack([]);
             }}
           >
             {viewMode === 'trash' ? 'Back to files' : 'Trash'}
           </button>
-          {viewMode === 'trash' && (trashItems.length > 0 || trashFolders.length > 0) && (
+          {viewMode === 'trash' && trashNavStack.length === 0 && (trashItems.length > 0 || trashFolders.length > 0) && (
             <button onClick={() => { setTrashSelectMode((p) => !p); setSelectedTrashIds(new Set()); }}>
               {trashSelectMode ? 'Cancel' : 'Select'}
             </button>
           )}
-          {viewMode === 'trash' && trashSelectMode && selectedTrashIds.size > 0 && canRestoreTrash(role) && (
+          {viewMode === 'trash' && trashNavStack.length === 0 && trashSelectMode && selectedTrashIds.size > 0 && canRestoreTrash(role) && (
             <button onClick={() => { void handleBulkRestoreTrash(); }} disabled={trashActionId !== null}>
               Restore ({selectedTrashIds.size})
             </button>
           )}
-          {viewMode === 'trash' && trashSelectMode && selectedTrashIds.size > 0 && canManageTrash(role) && (
+          {viewMode === 'trash' && trashNavStack.length === 0 && trashSelectMode && selectedTrashIds.size > 0 && canManageTrash(role) && (
             <button className="space-explorer__trash-danger" onClick={() => { void handleBulkPermanentDelete(); }} disabled={trashActionId !== null}>
               Delete forever ({selectedTrashIds.size})
             </button>
           )}
-          {viewMode === 'trash' && !trashSelectMode && canManageTrash(role) && (trashItems.length > 0 || trashFolders.length > 0) && (
+          {viewMode === 'trash' && trashNavStack.length === 0 && !trashSelectMode && canManageTrash(role) && (trashItems.length > 0 || trashFolders.length > 0) && (
             <button onClick={() => { void handleEmptyTrash(); }} disabled={trashActionId === 'empty'}>
               {trashActionId === 'empty' ? 'Emptying…' : 'Empty Trash'}
             </button>
@@ -992,9 +1075,27 @@ export default function SpaceExplorer({
         )}
       </nav>}
 
-      {viewMode === 'trash' && (
+      {viewMode === 'trash' && trashNavStack.length === 0 && (
         <p className="space-explorer__message">
           Trashed items are permanently deleted after 7 days.
+        </p>
+      )}
+      {viewMode === 'trash' && trashNavStack.length > 0 && (
+        <p className="space-explorer__message" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setTrashNavStack([])}>← Trash</button>
+          {trashNavStack.map((entry, i) => (
+            <span key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span className="space-explorer__breadcrumb-sep">/</span>
+              {i < trashNavStack.length - 1 ? (
+                <button type="button" onClick={() => setTrashNavStack((prev) => prev.slice(0, i + 1))}>
+                  📁 {entry.name}
+                </button>
+              ) : (
+                <span>📁 {entry.name}</span>
+              )}
+            </span>
+          ))}
+          {trashNavLoading && <span>Loading…</span>}
         </p>
       )}
       {loading && isEmpty && <p className="space-explorer__message">Loading…</p>}
@@ -1006,14 +1107,80 @@ export default function SpaceExplorer({
       )}
 
       <div className="space-explorer__body">
-        {viewMode === 'trash' && (trashItems.length > 0 || trashFolders.length > 0) && (
+        {viewMode === 'trash' && currentNavEntry && (
+          <div className="space-explorer__grid">
+            {currentNavEntry.items.length === 0 && currentNavEntry.subfolders.length === 0 && !trashNavLoading && (
+              <p className="space-explorer__message">This folder is empty.</p>
+            )}
+            {currentNavEntry.subfolders.map((sub) => (
+              <div key={`tsub-${sub.id}`} className="space-explorer__tile-wrap">
+                <button
+                  type="button"
+                  className="space-explorer__tile--folder"
+                  onClick={() => { void openTrashSubfolder(sub); }}
+                  title={`Open ${sub.name}`}
+                >
+                  <span className="space-explorer__folder-icon">📁</span>
+                  <span className="space-explorer__folder-name">{sub.name}</span>
+                </button>
+                <div className="space-explorer__trash-actions">
+                  {canRestoreTrash(role) && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleRestoreTrashSubfolder(sub); }}
+                      disabled={trashActionId !== null}
+                    >
+                      {trashActionId === `folder-${sub.id}` ? 'Working…' : 'Restore'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {currentNavEntry.items.map((item) => (
+              <div key={item.itemId} className="space-explorer__tile-wrap">
+                <div className="space-explorer__tile--item">
+                  <button type="button" className="space-explorer__tile-btn" title={item.displayName}>
+                    <AuthenticatedImage
+                      src={itemThumbnailUrl(space.id, item.itemId)}
+                      token={token}
+                      alt={item.displayName}
+                      loading="lazy"
+                      className="space-explorer__thumb"
+                    />
+                  </button>
+                </div>
+                <div className="space-explorer__trash-actions">
+                  <span className="space-explorer__trash-meta">
+                    {formatRemainingTrashTime(item.expiresAt)}
+                  </span>
+                  {canRestoreTrash(role) && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleRestoreTrashFolderItem(item); }}
+                      disabled={trashActionId !== null}
+                    >
+                      {trashActionId === item.itemId ? 'Working…' : 'Restore'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {viewMode === 'trash' && !currentNavEntry && (trashItems.length > 0 || trashFolders.length > 0) && (
           <div className="space-explorer__grid">
             {trashFolders.map((folder) => (
               <div key={`tf-${folder.folderId}`} className="space-explorer__tile-wrap">
-                <div className="space-explorer__tile--folder" style={{ cursor: 'default' }}>
+                <button
+                  type="button"
+                  className="space-explorer__tile--folder"
+                  onClick={() => { void openTrashFolder(folder); }}
+                  title={`Open ${folder.name}`}
+                >
                   <span className="space-explorer__folder-icon">📁</span>
                   <span className="space-explorer__folder-name">{folder.name}</span>
-                </div>
+                </button>
                 <div className="space-explorer__trash-actions">
                   <span className="space-explorer__trash-meta">
                     {formatRemainingTrashTime(folder.expiresAt)}
@@ -1024,7 +1191,7 @@ export default function SpaceExplorer({
                       onClick={() => { void handleRestoreTrashFolder(folder); }}
                       disabled={trashActionId !== null}
                     >
-                      {trashActionId === `folder-${folder.folderId}` ? 'Working…' : 'Restore'}
+                      {trashActionId === `folder-${folder.folderId}` ? 'Working…' : 'Restore all'}
                     </button>
                   )}
                   {canManageTrash(role) && (

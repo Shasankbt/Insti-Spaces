@@ -26,8 +26,11 @@ import {
   purgeExpiredSpaceTrash,
   renameSpaceItem,
   restoreSpaceItemFromTrash,
+  getTrashedItemById,
+  setItemFolderId,
 } from '../db/spaceItems';
 import {
+  createFolder,
   getFolderAncestors,
   getFolderByName,
   getFolderById,
@@ -174,8 +177,8 @@ const uniqueDisplayName = (original: string, taken: Set<string>): string => {
   const ext = path.extname(original);
   const base = path.basename(original, ext);
   let n = 1;
-  while (taken.has(`${base} (${n})${ext}`)) n++;
-  return `${base} (${n})${ext}`;
+  while (taken.has(`${base}(${n})${ext}`)) n++;
+  return `${base}(${n})${ext}`;
 };
 
 const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
@@ -633,6 +636,42 @@ router.post('/trash/:itemId/restore', authenticate, isMember, async (req, res) =
   }
 
   try {
+    const trashedItem = await getTrashedItemById({ spaceId, itemId });
+    if (!trashedItem) {
+      res.status(404).json({ error: 'Item not found in trash' });
+      return;
+    }
+
+    // Recreate deleted parent folder chain if needed
+    if (trashedItem.folder_id != null) {
+      const folder = await getFolderById(trashedItem.folder_id);
+      if (!folder || folder.deleted) {
+        const ancestors = folder
+          ? await getFolderAncestors(trashedItem.folder_id)
+          : [];
+        const chain = folder ? [...ancestors, folder] : ancestors;
+
+        let currentParentId: number | null = null;
+        for (const f of chain) {
+          if (!f.deleted) {
+            currentParentId = f.id;
+            continue;
+          }
+          const existing = await getFolderByName({ spaceId, name: f.name, parentId: currentParentId });
+          if (existing && !existing.deleted) {
+            currentParentId = existing.id;
+          } else {
+            const newFolder = await createFolder({ spaceId, createdBy: req.user.id, name: f.name, parentId: currentParentId });
+            currentParentId = newFolder.id;
+          }
+        }
+
+        if (currentParentId !== trashedItem.folder_id) {
+          await setItemFolderId({ spaceId, itemId, folderId: currentParentId });
+        }
+      }
+    }
+
     const item = await restoreSpaceItemFromTrash({ spaceId, itemId });
     if (!item) {
       res.status(404).json({ error: 'Item not found in trash' });

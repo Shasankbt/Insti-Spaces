@@ -14,6 +14,8 @@ import {
   softDeleteFolderSubtree,
   restoreFolderSubtree,
   permanentlyDeleteTrashedFolder,
+  getTrashedFolderDirectChildren,
+  prepareRestoreFolder,
 } from '../db/spaceFolders';
 import { getItemsInFolder, addSpaceItem } from '../db/spaceItems';
 
@@ -195,9 +197,9 @@ router.post('/folders/:folderId/copy', authenticate, isMember, async (req, res) 
 
       let newName = src.name;
       if (await getFolderByName({ spaceId, name: newName, parentId: destParentId })) {
-        let i = 2;
-        while (await getFolderByName({ spaceId, name: `${newName} (${i})`, parentId: destParentId })) i++;
-        newName = `${newName} (${i})`;
+        let i = 1;
+        while (await getFolderByName({ spaceId, name: `${newName}(${i})`, parentId: destParentId })) i++;
+        newName = `${newName}(${i})`;
       }
 
       const newFolder = await createFolder({ spaceId, createdBy: req.user.id, name: newName, parentId: destParentId });
@@ -279,10 +281,34 @@ router.post('/folders/:folderId/restore', authenticate, isMember, async (req, re
   if (!Number.isInteger(folderId)) { res.status(400).json({ error: 'Invalid folder id' }); return; }
   try {
     const folder = await getFolderById(folderId);
-    if (!folder || folder.space_id !== spaceId || !folder.deleted || !folder.trashed_at) {
+    if (!folder || folder.space_id !== spaceId || !folder.deleted) {
       res.status(404).json({ error: 'Trashed folder not found' });
       return;
     }
+
+    // Walk up to find the nearest non-deleted ancestor to restore under
+    let targetParentId: number | null = folder.parent_id;
+    while (targetParentId != null) {
+      const parent = await getFolderById(targetParentId);
+      if (!parent || parent.deleted) {
+        targetParentId = parent ? parent.parent_id : null;
+      } else {
+        break;
+      }
+    }
+
+    // Handle name conflict at the target location
+    let restoreName = folder.name;
+    if (await getFolderByName({ spaceId, name: restoreName, parentId: targetParentId })) {
+      let i = 1;
+      while (await getFolderByName({ spaceId, name: `${restoreName}(${i})`, parentId: targetParentId })) i++;
+      restoreName = `${restoreName}(${i})`;
+    }
+
+    if (restoreName !== folder.name || targetParentId !== folder.parent_id) {
+      await prepareRestoreFolder({ folderId, name: restoreName, parentId: targetParentId });
+    }
+
     const result = await restoreFolderSubtree({ spaceId, folderId });
     res.json(result);
   } catch (err: unknown) {
@@ -307,6 +333,37 @@ router.delete('/folders/:folderId/trash', authenticate, isMember, async (req, re
     }
     await permanentlyDeleteTrashedFolder({ spaceId, folderId });
     res.json({ ok: true });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Internal server error' });
+  }
+});
+
+// GET /spaces/:spaceId/folders/:folderId/trash-items — direct children of a deleted folder
+router.get('/folders/:folderId/trash-items', authenticate, isMember, async (req, res) => {
+  const spaceId = req.member.spaceid;
+  const folderId = Number(req.params.folderId);
+  if (!Number.isInteger(folderId)) { res.status(400).json({ error: 'Invalid folder id' }); return; }
+  try {
+    const folder = await getFolderById(folderId);
+    if (!folder || folder.space_id !== spaceId || !folder.deleted) {
+      res.status(404).json({ error: 'Trashed folder not found' });
+      return;
+    }
+    const { items, subfolders } = await getTrashedFolderDirectChildren({ spaceId, folderId });
+    const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+    res.json({
+      items: items.map((i) => ({
+        itemId: i.photo_id,
+        displayName: i.display_name,
+        uploadedAt: i.uploaded_at,
+        mimeType: i.mime_type,
+        sizeBytes: i.size_bytes,
+        folderId: i.folder_id,
+        trashedAt: i.trashed_at,
+        expiresAt: i.trashed_at ? new Date(new Date(i.trashed_at).getTime() + EXPIRY_MS) : null,
+      })),
+      folders: subfolders,
+    });
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Internal server error' });
   }

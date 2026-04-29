@@ -29,8 +29,8 @@ const uniqueDisplayName = (original: string, taken: Set<string>): string => {
   const ext = path.extname(original);
   const base = path.basename(original, ext);
   let n = 1;
-  while (taken.has(`${base} (${n})${ext}`)) n++;
-  return `${base} (${n})${ext}`;
+  while (taken.has(`${base}(${n})${ext}`)) n++;
+  return `${base}(${n})${ext}`;
 };
 
 type ConflictPlan = {

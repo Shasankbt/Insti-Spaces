@@ -416,6 +416,17 @@ export const getSpaceTrash = ({
     ...authHeaders(token),
   });
 
+export const getSpaceTrashFolderItems = ({
+  spaceId,
+  folderId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  token: string;
+}) =>
+  axios.get<{ items: SpaceItem[]; folders: { id: number; name: string }[] }>(`${API}/spaces/${spaceId}/folders/${folderId}/trash-items`, authHeaders(token));
+
 export const restoreSpaceTrashFolder = ({
   spaceId,
   folderId,

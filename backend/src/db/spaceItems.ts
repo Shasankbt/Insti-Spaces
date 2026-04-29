@@ -214,11 +214,14 @@ export const getTrashedItems = async ({
 }): Promise<{ rows: SpaceItem[]; hasMore: boolean }> => {
   const cap = Math.min(Math.max(limit, 1), PAGE.TRASH_MAX);
   const { rows } = await pool.query<SpaceItem>(
-    `SELECT * FROM space_items
-     WHERE space_id = $1
-       AND deleted = false
-       AND trashed_at IS NOT NULL
-     ORDER BY trashed_at DESC
+    `SELECT si.* FROM space_items si
+     WHERE si.space_id = $1
+       AND si.deleted = false
+       AND si.trashed_at IS NOT NULL
+       AND (si.folder_id IS NULL OR NOT EXISTS (
+         SELECT 1 FROM space_folders sf WHERE sf.id = si.folder_id AND sf.deleted = true
+       ))
+     ORDER BY si.trashed_at DESC
      LIMIT $2 OFFSET $3`,
     [spaceId, cap + 1, offset],
   );
@@ -242,6 +245,36 @@ export const getItemsInFolder = async ({
     [spaceId, folderId],
   );
   return rows;
+};
+
+export const getTrashedItemById = async ({
+  spaceId,
+  itemId,
+}: {
+  spaceId: number;
+  itemId: string;
+}): Promise<SpaceItem | null> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1 AND photo_id = $2::uuid AND deleted = false AND trashed_at IS NOT NULL`,
+    [spaceId, itemId],
+  );
+  return rows[0] ?? null;
+};
+
+export const setItemFolderId = async ({
+  spaceId,
+  itemId,
+  folderId,
+}: {
+  spaceId: number;
+  itemId: string;
+  folderId: number | null;
+}): Promise<void> => {
+  await pool.query(
+    `UPDATE space_items SET folder_id = $3 WHERE space_id = $1 AND photo_id = $2::uuid`,
+    [spaceId, itemId, folderId],
+  );
 };
 
 export const getItemsByIds = async ({

@@ -219,7 +219,7 @@ export const restoreFolderSubtree = async ({
     `WITH RECURSIVE subtree AS (
        SELECT id
        FROM space_folders
-       WHERE id = $2 AND space_id = $1 AND deleted = true AND trashed_at IS NOT NULL
+       WHERE id = $2 AND space_id = $1 AND deleted = true
        UNION ALL
        SELECT f.id
        FROM space_folders f
@@ -283,6 +283,32 @@ export const permanentlyDeleteTrashedFolder = async ({
   return (rowCount ?? 0) >= 0;
 };
 
+export const getTrashedFolderItems = async ({
+  spaceId,
+  folderId,
+}: {
+  spaceId: number;
+  folderId: number;
+}): Promise<import('../types').SpaceItem[]> => {
+  const { rows } = await pool.query(
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM space_folders
+       WHERE id = $2 AND space_id = $1 AND deleted = true
+       UNION ALL
+       SELECT f.id FROM space_folders f
+       JOIN subtree s ON f.parent_id = s.id
+       WHERE f.space_id = $1 AND f.deleted = true
+     )
+     SELECT si.*
+     FROM space_items si
+     JOIN subtree s ON si.folder_id = s.id
+     WHERE si.space_id = $1 AND si.deleted = false AND si.trashed_at IS NOT NULL
+     ORDER BY si.trashed_at DESC`,
+    [spaceId, folderId],
+  );
+  return rows;
+};
+
 export const getFolderSubtreePaths = async ({
   spaceId,
   folderIds,
@@ -307,6 +333,51 @@ export const getFolderSubtreePaths = async ({
     [spaceId, folderIds],
   );
   return rows as Array<{ id: number; folder_path: string }>;
+};
+
+export const getTrashedFolderDirectChildren = async ({
+  spaceId,
+  folderId,
+}: {
+  spaceId: number;
+  folderId: number;
+}): Promise<{
+  items: import('../types').SpaceItem[];
+  subfolders: Array<{ id: number; name: string }>;
+}> => {
+  const [{ rows: itemRows }, { rows: folderRows }] = await Promise.all([
+    pool.query(
+      `SELECT * FROM space_items
+       WHERE space_id = $1 AND folder_id = $2 AND deleted = false AND trashed_at IS NOT NULL
+       ORDER BY uploaded_at DESC`,
+      [spaceId, folderId],
+    ),
+    pool.query<{ id: number; name: string }>(
+      `SELECT id, name FROM space_folders
+       WHERE space_id = $1 AND parent_id = $2 AND deleted = true
+       ORDER BY name ASC`,
+      [spaceId, folderId],
+    ),
+  ]);
+  return {
+    items: itemRows as import('../types').SpaceItem[],
+    subfolders: folderRows,
+  };
+};
+
+export const prepareRestoreFolder = async ({
+  folderId,
+  name,
+  parentId,
+}: {
+  folderId: number;
+  name: string;
+  parentId: number | null;
+}): Promise<void> => {
+  await pool.query(
+    `UPDATE space_folders SET name = $1, parent_id = $2 WHERE id = $3`,
+    [name, parentId, folderId],
+  );
 };
 
 export const getFolderSubtreeItems = async ({
