@@ -520,6 +520,253 @@ code {
   opacity: 0.8;
 }
 
+/* ── Space View layout ── */
+
+.space-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.space-view__top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 0;
+}
+
+.space-view__back {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.space-view__back:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.06));
+  color: var(--fg);
+}
+
+.space-view__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.space-view__content {
+  flex: 1;
+  min-height: 0;
+  padding: 0 1rem 1rem;
+}
+
+/* ── Tab bar ── */
+
+.space-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.1));
+  padding: 0 1rem;
+  margin-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.space-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.space-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  padding: 0.6rem 1rem;
+  text-transform: lowercase;
+  white-space: nowrap;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.space-tab:hover {
+  color: var(--fg);
+}
+
+.space-tab--active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+/* ── Explorer toolbar ── */
+
+.space-explorer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 0 0.25rem;
+  flex-wrap: wrap;
+}
+
+.explorer-toolbar__icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 5px 8px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.explorer-toolbar__icon-btn:hover:not(:disabled) {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  border-color: var(--border, rgba(255,255,255,0.12));
+  color: var(--fg);
+}
+
+.explorer-toolbar__icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.explorer-toolbar__icon-btn--active {
+  background: var(--accent-bg, rgba(99,102,241,0.15));
+  border-color: var(--accent-border, rgba(99,102,241,0.35));
+  color: var(--accent, #818cf8);
+}
+
+.explorer-toolbar__icon-btn--danger {
+  color: #f87171;
+}
+
+.explorer-toolbar__icon-btn--danger:hover:not(:disabled) {
+  background: rgba(248,113,113,0.12);
+  border-color: rgba(248,113,113,0.3);
+  color: #fca5a5;
+}
+
+/* ── Space About tab ── */
+
+.space-about {
+  padding: 1.5rem 0;
+  max-width: 480px;
+}
+
+.space-about__section {
+  margin-bottom: 2rem;
+}
+
+.space-about__name {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.space-about__dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.space-about__dl dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.space-about__dl dd {
+  margin: 0;
+}
+
+.space-about__role-badge {
+  background: var(--accent-bg, rgba(99,102,241,0.15));
+  border: 1px solid var(--accent-border, rgba(99,102,241,0.3));
+  border-radius: 4px;
+  color: var(--accent, #818cf8);
+  font-size: 0.78rem;
+  padding: 1px 7px;
+}
+
+.space-about__danger-zone {
+  border: 1px solid rgba(248,113,113,0.25);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.space-about__danger-title {
+  color: #f87171;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+}
+
+.space-about__danger-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.space-about__btn {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  transition: opacity 0.15s;
+}
+
+.space-about__btn:hover {
+  opacity: 0.8;
+}
+
+.space-about__btn--leave {
+  background: var(--hover-bg, rgba(255,255,255,0.06));
+  border-color: var(--border, rgba(255,255,255,0.1));
+  color: var(--fg);
+}
+
+.space-about__btn--delete {
+  background: rgba(248,113,113,0.12);
+  border-color: rgba(248,113,113,0.3);
+  color: #f87171;
+}
+
+/* ── Members tab ── */
+
+.space-members-tab {
+  padding: 1rem 0;
+}
+
+.space-members-tab__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+/* ── Space Explorer item name ── */
+
+.space-explorer__item-name {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted, #64748b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+  padding: 0 4px;
+  line-height: 1.3;
+}
+
 /* ── Space Feed ── */
 
 .space-feed {
@@ -1194,30 +1441,74 @@ code {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2px;
-  font-size: 0.85rem;
+  gap: 4px;
+  font-size: 0.8rem;
   margin-bottom: 0.75rem;
-  min-height: 1.6rem;
+  min-height: 1.8rem;
 }
 
-.space-explorer__breadcrumb-item {
+/* ← back arrow button */
+.space-explorer__breadcrumb-back {
   background: none;
-  border: none;
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
+  color: var(--muted, #64748b);
   cursor: pointer;
-  padding: 2px 4px;
-  color: var(--accent, #7c9ef0);
-  font-size: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 4px 10px;
+  transition: background 0.12s, color 0.12s;
+  margin-right: 2px;
 }
 
-.space-explorer__breadcrumb-item--current {
+.space-explorer__breadcrumb-back:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  color: var(--fg, #e2e8f0);
+}
+
+/* Pill-shaped breadcrumb segment */
+.space-explorer__breadcrumb-pill {
+  background: var(--code-bg, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 20px;
+  color: var(--accent, #7c9ef0);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 3px 14px;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+  line-height: 1.6;
+}
+
+.space-explorer__breadcrumb-pill:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  border-color: var(--accent-border, rgba(124,158,240,0.4));
+}
+
+.space-explorer__breadcrumb-pill--current {
+  background: var(--accent-bg, rgba(124,158,240,0.12));
+  border-color: var(--accent-border, rgba(124,158,240,0.35));
   color: var(--text-h, #e2e8f0);
-  font-weight: 600;
   cursor: default;
+  font-weight: 600;
+}
+
+.space-explorer__breadcrumb-pill--current:hover {
+  background: var(--accent-bg, rgba(124,158,240,0.12));
+  border-color: var(--accent-border, rgba(124,158,240,0.35));
+}
+
+/* Wrapper for sep + pill pairs */
+.space-explorer__breadcrumb-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .space-explorer__breadcrumb-sep {
   color: var(--text-muted, #64748b);
   user-select: none;
+  font-size: 0.85rem;
 }
 
 .space-explorer__message {
@@ -1335,10 +1626,8 @@ code {
   display: block;
 }
 
+/* Like button — only in lightbox footer now, not on thumbnails */
 .space-explorer__like-btn {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
   min-width: 38px;
   height: 28px;
   display: inline-flex;
@@ -1373,7 +1662,7 @@ code {
   cursor: default;
 }
 
-/* Three-dots button — visible on hover */
+/* Three-dots button — floating over folder tiles, visible on hover */
 .space-explorer__menu-btn {
   position: absolute;
   top: 4px;
@@ -1388,6 +1677,42 @@ code {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
+}
+
+/* Three-dots button — inline below item thumbnails */
+.space-explorer__tile-menu-btn {
+  background: none;
+  border: none;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.space-explorer__tile-menu-btn:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  color: var(--fg, #e2e8f0);
+}
+
+/* Footer below item thumbnail: name + ⋮ stacked and centered */
+.space-explorer__tile-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 2px 2px;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Context menu anchored above the footer for item tiles */
+.space-explorer__tile-wrap--item .space-explorer__menu--above {
+  top: auto;
+  bottom: 52px;
+  right: 0;
+  left: auto;
 }
 
 /* Context menu dropdown */
@@ -1454,6 +1779,183 @@ code {
 
 .space-explorer__trash-danger {
   color: #dc2626;
+}
+
+/* ── Folder picker (mini-explorer inside move / copy modals) ── */
+
+.folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.folder-picker__nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0 8px;
+  font-size: 0.78rem;
+}
+
+.folder-picker__back {
+  background: none;
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 8px;
+  margin-right: 2px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.folder-picker__back:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  color: var(--fg, #e2e8f0);
+}
+
+.folder-picker__crumb-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folder-picker__sep {
+  color: var(--muted, #64748b);
+  user-select: none;
+}
+
+.folder-picker__crumb {
+  background: var(--code-bg, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 20px;
+  color: var(--accent, #7c9ef0);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.folder-picker__crumb:hover {
+  background: var(--hover-bg, rgba(255,255,255,0.07));
+  border-color: var(--accent-border, rgba(124,158,240,0.4));
+}
+
+.folder-picker__crumb--current {
+  background: var(--accent-bg, rgba(124,158,240,0.12));
+  border-color: var(--accent-border, rgba(124,158,240,0.35));
+  color: var(--text-h, #e2e8f0);
+  cursor: default;
+  font-weight: 600;
+}
+
+/* Scrollable list: folders as rows, items as a dimmed thumbnail strip */
+.folder-picker__grid {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
+  padding: 8px 4px;
+  background: var(--code-bg, #1e293b);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Folder row — full-width, bright */
+.folder-picker__folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-h, #e2e8f0);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 7px 10px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.folder-picker__folder:hover {
+  background: rgba(255,255,255,0.07);
+}
+
+.folder-picker__folder-icon {
+  flex-shrink: 0;
+}
+
+.folder-picker__folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-picker__folder-arrow {
+  color: var(--muted, #64748b);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* Image items inside picker — dimmed, stacked below folders, not interactive */
+.folder-picker__item {
+  width: 52px;
+  height: 52px;
+  border-radius: 5px;
+  overflow: hidden;
+  opacity: 0.25;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.folder-picker__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.folder-picker__empty {
+  color: var(--muted, #64748b);
+  font-size: 0.82rem;
+  padding: 12px 8px;
+  margin: 0;
+  text-align: center;
+}
+
+.folder-picker__error {
+  color: #f87171;
+  font-size: 0.82rem;
+  margin: 6px 0 0;
+}
+
+.folder-picker__confirm {
+  margin-top: 10px;
+  width: 100%;
+  background: var(--accent, #7c9ef0);
+  border: none;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 9px 0;
+  transition: opacity 0.15s;
+}
+
+.folder-picker__confirm:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.folder-picker__confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Right info panel */

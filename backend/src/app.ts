@@ -34,22 +34,6 @@ app.use(rateLimit({
   legacyHeaders: false,
 }));
 
-app.use('/auth/login', rateLimit({
-  windowMs: RATE.LOGIN_WINDOW_MS,
-  limit: RATE.LOGIN_MAX,
-  message: { error: 'Too many login attempts, try again in 15 minutes' },
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-}));
-
-app.use('/auth/register', rateLimit({
-  windowMs: RATE.REGISTER_WINDOW_MS,
-  limit: RATE.REGISTER_MAX,
-  message: { error: 'Too many registrations from this IP' },
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-}));
-
 app.use('/auth', authRouter);
 app.use('/friends', friendsRouter);
 app.use('/user', userRouter);

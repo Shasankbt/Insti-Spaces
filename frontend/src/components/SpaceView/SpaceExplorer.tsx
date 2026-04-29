@@ -5,36 +5,35 @@ import {
   copySpaceFolder,
   deleteSpaceFolder,
   downloadSelected,
-  emptySpaceTrash,
   getSpaceExplorer,
-  getSpaceTrash,
   likeSpaceItem,
   unlikeSpaceItem,
   moveSpaceFolder,
   moveItems,
-  permanentlyDeleteSpaceTrashItem,
-  getSpaceTrashFolderItems,
-  permanentlyDeleteSpaceTrashFolder,
   renameSpaceItem,
-  restoreSpaceTrashItem,
-  restoreSpaceTrashFolder,
   trashItems as trashItemsApi,
 } from '../../Api';
 import type { ConflictResolution, ItemConflict } from '../../Api';
 import { useDeltaSync } from '../../hooks/useDeltaSync';
-import type { ExplorerFolder, Role, Space, SpaceItem, TrashedFolder } from '../../types';
+import type { ExplorerFolder, Role, Space, SpaceItem } from '../../types';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
-import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL, TRASH_LIMIT } from '../../constants';
+import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL } from '../../constants';
 import { itemFileUrl, itemThumbnailUrl } from '../../utils';
-
-interface TrashNavEntry {
-  id: number;
-  name: string;
-  items: SpaceItem[];
-  subfolders: { id: number; name: string }[];
-}
+import {
+  IconBack,
+  IconChevron,
+  IconCopy,
+  IconDownload,
+  IconDots,
+  IconHome,
+  IconMove,
+  IconNewFolder,
+  IconRefresh,
+  IconSelect,
+  IconUpload,
+} from './Icons';
 
 interface SpaceExplorerProps {
   space: Space;
@@ -42,6 +41,7 @@ interface SpaceExplorerProps {
   role: Role;
   refreshTrigger?: number;
   onFolderChange?: (folderId: number | null) => void;
+  onUpload?: () => void;
 }
 
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
@@ -58,14 +58,12 @@ const formatDate = (iso: string): string =>
 const canWrite = (role: Role) => ['contributor', 'moderator', 'admin'].includes(role);
 const canManageTrash = (role: Role) => ['moderator', 'admin'].includes(role);
 const canMoveItemsToTrash = canWrite;
-const canRestoreTrash = canWrite;
 
 const copyToClipboard = async (text: string): Promise<void> => {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return;
   }
-
   const el = document.createElement('textarea');
   el.value = text;
   el.style.position = 'fixed';
@@ -74,19 +72,6 @@ const copyToClipboard = async (text: string): Promise<void> => {
   el.select();
   document.execCommand('copy');
   document.body.removeChild(el);
-};
-
-const formatRemainingTrashTime = (expiresAt?: string | null): string => {
-  if (!expiresAt) return 'Expires after 7 days';
-
-  const remainingMs = new Date(expiresAt).getTime() - Date.now();
-  if (remainingMs <= 0) return 'Expires soon';
-
-  const days = Math.floor(remainingMs / 86_400_000);
-  if (days > 0) return `${days} day${days === 1 ? '' : 's'} left`;
-
-  const hours = Math.max(1, Math.ceil(remainingMs / 3_600_000));
-  return `${hours} hour${hours === 1 ? '' : 's'} left`;
 };
 
 interface DeltaItem extends SpaceItem {
@@ -103,12 +88,159 @@ interface DeltaFolder {
   deleted: boolean;
 }
 
+/* ── Folder picker (mini-explorer for move / copy destination) ── */
+
+interface PickerFile {
+  itemId: string;
+  displayName: string;
+}
+
+function FolderPicker({
+  space,
+  token,
+  allFolders,
+  excludeFolderIds,
+  loading,
+  error,
+  onConfirm,
+  confirmLabel,
+}: {
+  space: Space;
+  token: string;
+  allFolders: DeltaFolder[];
+  excludeFolderIds: Set<number>;
+  loading: boolean;
+  error: string | null;
+  onConfirm: (folderId: number | null) => void;
+  confirmLabel: string;
+}) {
+  const [folderId, setFolderId] = useState<number | null>(null);
+  const [stack, setStack] = useState<{ id: number; name: string }[]>([]);
+  const [items, setItems] = useState<PickerFile[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  const subfolders = allFolders.filter(
+    (f) => !f.deleted && !excludeFolderIds.has(f.id) && f.parent_id === folderId,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setItemsLoading(true);
+    const url = folderId != null
+      ? `${API_BASE}/spaces/${space.id}/items?folder_id=${folderId}&limit=30`
+      : `${API_BASE}/spaces/${space.id}/items?limit=30`;
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d: { items?: PickerFile[] }) => {
+        if (!cancelled) setItems(d.items ?? []);
+      })
+      .catch(() => { if (!cancelled) setItems([]); })
+      .finally(() => { if (!cancelled) setItemsLoading(false); });
+    return () => { cancelled = true; };
+  }, [folderId, space.id, token]);
+
+  const enterFolder = (f: DeltaFolder) => {
+    setStack((prev) => [...prev, { id: f.id, name: f.name }]);
+    setFolderId(f.id);
+  };
+
+  const goToIndex = (i: number) => {
+    if (i < 0) {
+      setStack([]);
+      setFolderId(null);
+    } else {
+      const newStack = stack.slice(0, i + 1);
+      setStack(newStack);
+      setFolderId(newStack[i]!.id);
+    }
+  };
+
+  return (
+    <div className="folder-picker">
+      <div className="folder-picker__nav">
+        {stack.length > 0 && (
+          <button
+            type="button"
+            className="folder-picker__back"
+            onClick={() => goToIndex(stack.length - 2)}
+            aria-label="Go up"
+          >
+            <IconBack />
+          </button>
+        )}
+        <button
+          type="button"
+          className={`folder-picker__crumb${folderId === null ? ' folder-picker__crumb--current' : ''}`}
+          onClick={() => goToIndex(-1)}
+        >
+          <IconHome />
+        </button>
+        {stack.map((seg, i) => (
+          <span key={seg.id} className="folder-picker__crumb-wrap">
+            <span className="folder-picker__sep">/</span>
+            <button
+              type="button"
+              className={`folder-picker__crumb${i === stack.length - 1 ? ' folder-picker__crumb--current' : ''}`}
+              onClick={() => goToIndex(i)}
+            >
+              {seg.name}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      <div className="folder-picker__grid">
+        {subfolders.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className="folder-picker__folder"
+            onClick={() => enterFolder(f)}
+          >
+            <span className="folder-picker__folder-icon"><IconNewFolder /></span>
+            <span className="folder-picker__folder-name">{f.name}</span>
+            <span className="folder-picker__folder-arrow"><IconChevron /></span>
+          </button>
+        ))}
+        {items.map((item) => (
+          <div key={item.itemId} className="folder-picker__item">
+            <AuthenticatedImage
+              src={itemThumbnailUrl(space.id, item.itemId)}
+              token={token}
+              alt={item.displayName}
+              className="folder-picker__thumb"
+            />
+          </div>
+        ))}
+        {!itemsLoading && subfolders.length === 0 && items.length === 0 && (
+          <p className="folder-picker__empty">This folder is empty</p>
+        )}
+        {itemsLoading && <p className="folder-picker__empty">Loading…</p>}
+      </div>
+
+      {error && <p className="folder-picker__error">{error}</p>}
+
+      <button
+        type="button"
+        className="folder-picker__confirm"
+        onClick={() => onConfirm(folderId)}
+        disabled={loading}
+      >
+        {loading ? `${confirmLabel}ing…` : `${confirmLabel} here`}
+      </button>
+    </div>
+  );
+}
+
+/* ── Main component ── */
+
 export default function SpaceExplorer({
   space,
   token,
   role,
   refreshTrigger,
   onFolderChange,
+  onUpload,
 }: SpaceExplorerProps) {
   const { '*': folderPath = '' } = useParams<{ '*': string }>();
   const navigate = useNavigate();
@@ -117,24 +249,11 @@ export default function SpaceExplorer({
   const [currentFolder, setCurrentFolder] = useState<ExplorerFolder | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'files' | 'trash'>('files');
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<DeltaItem | null>(null);
-  const [trashItems, setTrashItems] = useState<SpaceItem[]>([]);
-  const [trashFolders, setTrashFolders] = useState<TrashedFolder[]>([]);
-  const [trashNavStack, setTrashNavStack] = useState<TrashNavEntry[]>([]);
-  const [trashNavLoading, setTrashNavLoading] = useState(false);
-  const [trashLoading, setTrashLoading] = useState(false);
-  const [trashError, setTrashError] = useState<string | null>(null);
-  const [trashActionId, setTrashActionId] = useState<string | null>(null);
-  const [trashOffset, setTrashOffset] = useState(0);
-  const [trashHasMore, setTrashHasMore] = useState(false);
-  const [trashSelectMode, setTrashSelectMode] = useState(false);
-  const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [moveItem, setMoveItem] = useState<DeltaItem | null>(null);
   const [moveFolder, setMoveFolder] = useState<DeltaFolder | null>(null);
-  const [moveTargetFolder, setMoveTargetFolder] = useState<string>('root');
   const [moveLoading, setMoveLoading] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -144,19 +263,15 @@ export default function SpaceExplorer({
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<number>>(new Set());
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
-  const [bulkMoveTarget, setBulkMoveTarget] = useState<string>('root');
   const [bulkMoveLoading, setBulkMoveLoading] = useState(false);
   const [bulkMoveError, setBulkMoveError] = useState<string | null>(null);
   const [bulkCopyOpen, setBulkCopyOpen] = useState(false);
-  const [bulkCopyTarget, setBulkCopyTarget] = useState<string>('root');
   const [bulkCopyLoading, setBulkCopyLoading] = useState(false);
   const [bulkCopyError, setBulkCopyError] = useState<string | null>(null);
   const [copyItem, setCopyItem] = useState<DeltaItem | null>(null);
-  const [copyTargetFolder, setCopyTargetFolder] = useState<string>('root');
   const [copyLoading, setCopyLoading] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [copyFolder, setCopyFolder] = useState<DeltaFolder | null>(null);
-  const [copyFolderTarget, setCopyFolderTarget] = useState<string>('root');
   const [copyFolderLoading, setCopyFolderLoading] = useState(false);
   const [copyFolderError, setCopyFolderError] = useState<string | null>(null);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
@@ -221,9 +336,7 @@ export default function SpaceExplorer({
     }
     if (!window.confirm(`Move ${fileIds.length + folderIds.length} selected item(s) to trash?`)) return;
     try {
-      if (fileIds.length > 0) {
-        await trashItemsApi({ spaceId: space.id, token, itemIds: fileIds });
-      }
+      if (fileIds.length > 0) await trashItemsApi({ spaceId: space.id, token, itemIds: fileIds });
       await Promise.all(folderIds.map((folderId) => deleteSpaceFolder({ spaceId: space.id, token, folderId })));
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
@@ -236,21 +349,12 @@ export default function SpaceExplorer({
     }
   };
 
-  const submitBulkMove = async (
-    e: React.FormEvent<HTMLFormElement>,
-    resolutions?: Record<string, ConflictResolution>,
-  ) => {
-    e.preventDefault();
-    const folderId = bulkMoveTarget === 'root' ? null : Number(bulkMoveTarget);
-    if (bulkMoveTarget !== 'root' && !Number.isInteger(folderId)) {
-      setBulkMoveError('Invalid folder selection');
-      return;
-    }
+  const doMoveSelected = async (folderId: number | null, resolutions?: Record<string, ConflictResolution>) => {
     const fileIds = [...selectedItemIds];
     const folderIds = [...selectedFolderIds];
     setBulkMoveError(null);
+    setBulkMoveLoading(true);
     try {
-      setBulkMoveLoading(true);
       if (fileIds.length > 0) {
         await moveItems({ spaceId: space.id, token, itemIds: fileIds, folderId, resolutions });
       }
@@ -265,9 +369,7 @@ export default function SpaceExplorer({
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
         setBulkMoveOpen(false);
-        openConflictModal(data.conflicts, async (res) => {
-          await submitBulkMove(e, res);
-        });
+        openConflictModal(data.conflicts, async (res) => { await doMoveSelected(folderId, res); });
       } else {
         setBulkMoveError('Move failed');
       }
@@ -276,21 +378,11 @@ export default function SpaceExplorer({
     }
   };
 
-  const submitBulkCopy = async (
-    e: React.FormEvent<HTMLFormElement>,
-    resolutions?: Record<string, ConflictResolution>,
-  ) => {
-    e.preventDefault();
-    const folderId = bulkCopyTarget === 'root' ? null : Number(bulkCopyTarget);
-    if (bulkCopyTarget !== 'root' && !Number.isInteger(folderId)) {
-      setBulkCopyError('Invalid folder selection');
-      return;
-    }
+  const doCopySelected = async (folderId: number | null, resolutions?: Record<string, ConflictResolution>) => {
     const fileIds = [...selectedItemIds];
-    // TODO: folder copy not yet supported — selectedFolderIds are skipped
     setBulkCopyError(null);
+    setBulkCopyLoading(true);
     try {
-      setBulkCopyLoading(true);
       await copyItems({ spaceId: space.id, token, itemIds: fileIds, folderId, resolutions });
       setBulkCopyOpen(false);
       setSelectedItemIds(new Set());
@@ -301,9 +393,7 @@ export default function SpaceExplorer({
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
         setBulkCopyOpen(false);
-        openConflictModal(data.conflicts, async (res) => {
-          await submitBulkCopy(e, res);
-        });
+        openConflictModal(data.conflicts, async (res) => { await doCopySelected(folderId, res); });
       } else {
         setBulkCopyError('Copy failed');
       }
@@ -314,7 +404,6 @@ export default function SpaceExplorer({
 
   const handleCopyLink = async (item: DeltaItem) => {
     const link = new URL(`/spaces/${space.id}/view/${item.itemId}`, window.location.origin);
-
     try {
       await copyToClipboard(link.toString());
       setOpenMenuId(null);
@@ -329,14 +418,8 @@ export default function SpaceExplorer({
     if (nextName == null) return;
     const trimmed = nextName.trim();
     if (!trimmed || trimmed === item.displayName) return;
-
     try {
-      await renameSpaceItem({
-        spaceId: space.id,
-        itemId: item.itemId,
-        displayName: trimmed,
-        token,
-      });
+      await renameSpaceItem({ spaceId: space.id, itemId: item.itemId, displayName: trimmed, token });
       setOpenMenuId(null);
       await refreshItems();
     } catch {
@@ -348,7 +431,7 @@ export default function SpaceExplorer({
     setOpenMenuId(null);
     setMoveError(null);
     setMoveItem(item);
-    setMoveTargetFolder(item.folderId == null ? 'root' : String(item.folderId));
+    setMoveFolder(null);
   };
 
   const handleMoveFolder = (folder: DeltaFolder) => {
@@ -356,39 +439,19 @@ export default function SpaceExplorer({
     setMoveError(null);
     setMoveItem(null);
     setMoveFolder(folder);
-    setMoveTargetFolder(folder.parent_id == null ? 'root' : String(folder.parent_id));
   };
 
-  const submitMoveToFolder = async (
-    e: React.FormEvent<HTMLFormElement>,
-    resolutions?: Record<string, ConflictResolution>,
-  ) => {
-    e.preventDefault();
-    if (!moveItem && !moveFolder) return;
-
-    const folderId = moveTargetFolder === 'root' ? null : Number(moveTargetFolder);
-    if (moveTargetFolder !== 'root' && !Number.isInteger(folderId)) {
-      setMoveError('Invalid folder selection');
-      return;
-    }
-
-    if (moveItem && folderId === moveItem.folderId && !resolutions) {
-      setMoveItem(null);
-      return;
-    }
-
-    if (moveFolder && folderId === moveFolder.parent_id) {
-      setMoveFolder(null);
-      return;
-    }
-
+  const doMoveItem = async (folderId: number | null, resolutions?: Record<string, ConflictResolution>) => {
+    const item = moveItem;
+    const folder = moveFolder;
+    if (!item && !folder) return;
     setMoveError(null);
+    setMoveLoading(true);
     try {
-      setMoveLoading(true);
-      if (moveItem) {
-        await moveItems({ spaceId: space.id, token, itemIds: [moveItem.itemId], folderId, resolutions });
-      } else if (moveFolder) {
-        await moveSpaceFolder({ spaceId: space.id, token, folderId: moveFolder.id, parentId: folderId });
+      if (item) {
+        await moveItems({ spaceId: space.id, token, itemIds: [item.itemId], folderId, resolutions });
+      } else if (folder) {
+        await moveSpaceFolder({ spaceId: space.id, token, folderId: folder.id, parentId: folderId });
       }
       setMoveItem(null);
       setMoveFolder(null);
@@ -397,10 +460,17 @@ export default function SpaceExplorer({
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
-        setMoveItem(null);
-        setMoveFolder(null);
         openConflictModal(data.conflicts, async (res) => {
-          await submitMoveToFolder(e, res);
+          setMoveLoading(true);
+          try {
+            if (item) await moveItems({ spaceId: space.id, token, itemIds: [item.itemId], folderId, resolutions: res });
+            else if (folder) await moveSpaceFolder({ spaceId: space.id, token, folderId: folder.id, parentId: folderId });
+            setMoveItem(null);
+            setMoveFolder(null);
+            await refreshItems();
+            await refreshFolders();
+          } catch { window.alert('Move failed'); }
+          finally { setMoveLoading(false); }
         });
       } else {
         const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
@@ -415,27 +485,21 @@ export default function SpaceExplorer({
     setOpenMenuId(null);
     setCopyError(null);
     setCopyItem(item);
-    setCopyTargetFolder(item.folderId == null ? 'root' : String(item.folderId));
+    setCopyFolder(null);
   };
 
   const handleCopyFolderTo = (folder: DeltaFolder) => {
     setOpenMenuId(null);
     setCopyFolderError(null);
     setCopyFolder(folder);
-    setCopyFolderTarget(folder.parent_id == null ? 'root' : String(folder.parent_id));
+    setCopyItem(null);
   };
 
-  const submitCopyFolderTo = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const doCopyFolderTo = async (targetParentId: number | null) => {
     if (!copyFolder) return;
-    const targetParentId = copyFolderTarget === 'root' ? null : Number(copyFolderTarget);
-    if (copyFolderTarget !== 'root' && !Number.isInteger(targetParentId)) {
-      setCopyFolderError('Invalid folder selection');
-      return;
-    }
     setCopyFolderError(null);
+    setCopyFolderLoading(true);
     try {
-      setCopyFolderLoading(true);
       await copySpaceFolder({ spaceId: space.id, token, folderId: copyFolder.id, targetParentId });
       setCopyFolder(null);
       await refreshItems();
@@ -448,32 +512,19 @@ export default function SpaceExplorer({
     }
   };
 
-  const submitCopyToFolder = async (
-    e: React.FormEvent<HTMLFormElement>,
-    resolutions?: Record<string, ConflictResolution>,
-  ) => {
-    e.preventDefault();
-    if (!copyItem) return;
-
-    const folderId = copyTargetFolder === 'root' ? null : Number(copyTargetFolder);
-    if (copyTargetFolder !== 'root' && !Number.isInteger(folderId)) {
-      setCopyError('Invalid folder selection');
-      return;
-    }
-
+  const doCopyItem = async (folderId: number | null, resolutions?: Record<string, ConflictResolution>) => {
+    const item = copyItem;
+    if (!item) return;
     setCopyError(null);
+    setCopyLoading(true);
     try {
-      setCopyLoading(true);
-      await copyItems({ spaceId: space.id, token, itemIds: [copyItem.itemId], folderId, resolutions });
+      await copyItems({ spaceId: space.id, token, itemIds: [item.itemId], folderId, resolutions });
       setCopyItem(null);
       await refreshItems();
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
-        setCopyItem(null);
-        openConflictModal(data.conflicts, async (res) => {
-          await submitCopyToFolder(e, res);
-        });
+        openConflictModal(data.conflicts, async (res) => { await doCopyItem(folderId, res); });
       } else {
         setCopyError('Copy failed');
       }
@@ -485,7 +536,6 @@ export default function SpaceExplorer({
   const handleDelete = async (item: DeltaItem) => {
     const confirmed = window.confirm(`Move "${item.displayName}" to trash?`);
     if (!confirmed) return;
-
     try {
       await trashItemsApi({ spaceId: space.id, token, itemIds: [item.itemId] });
       setOpenMenuId(null);
@@ -505,7 +555,6 @@ export default function SpaceExplorer({
   const handleDeleteFolder = async (folder: DeltaFolder) => {
     const confirmed = window.confirm(`Move folder "${folder.name}" and its contents to trash?`);
     if (!confirmed) return;
-
     try {
       await deleteSpaceFolder({ spaceId: space.id, token, folderId: folder.id });
       setOpenMenuId(null);
@@ -520,216 +569,6 @@ export default function SpaceExplorer({
     } catch (err: unknown) {
       const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
       window.alert(response?.data?.error ?? `Move folder to trash failed${response?.status ? ` (${response.status})` : ''}`);
-    }
-  };
-
-  const fetchTrash = useCallback(async (offset = 0) => {
-    setTrashLoading(true);
-    setTrashError(null);
-    try {
-      const { data } = await getSpaceTrash({ spaceId: space.id, token, limit: TRASH_LIMIT, offset });
-      setTrashItems((prev) => offset === 0 ? (data.items ?? []) : [...prev, ...(data.items ?? [])]);
-      setTrashFolders(data.folders ?? []);
-      setTrashHasMore(data.hasMore ?? false);
-      setTrashOffset(offset);
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Failed to load trash');
-    } finally {
-      setTrashLoading(false);
-    }
-  }, [space.id, token]);
-
-  const handleRestoreTrashFolder = async (folder: TrashedFolder) => {
-    setTrashActionId(`folder-${folder.folderId}`);
-    setTrashError(null);
-    try {
-      await restoreSpaceTrashFolder({ spaceId: space.id, folderId: folder.folderId, token });
-      setTrashFolders((prev) => prev.filter((f) => f.folderId !== folder.folderId));
-      await refreshItems();
-      await refreshFolders();
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Restore failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handlePermanentDeleteTrashFolder = async (folder: TrashedFolder) => {
-    const confirmed = window.confirm(`Permanently delete folder "${folder.name}" and all its contents?`);
-    if (!confirmed) return;
-    setTrashActionId(`folder-${folder.folderId}`);
-    setTrashError(null);
-    try {
-      await permanentlyDeleteSpaceTrashFolder({ spaceId: space.id, folderId: folder.folderId, token });
-      setTrashFolders((prev) => prev.filter((f) => f.folderId !== folder.folderId));
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Permanent delete failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const openTrashFolder = async (folder: TrashedFolder) => {
-    setTrashNavLoading(true);
-    try {
-      const { data } = await getSpaceTrashFolderItems({ spaceId: space.id, folderId: folder.folderId, token });
-      setTrashNavStack([{ id: folder.folderId, name: folder.name, items: data.items ?? [], subfolders: data.folders ?? [] }]);
-    } catch {
-      // leave empty
-    } finally {
-      setTrashNavLoading(false);
-    }
-  };
-
-  const openTrashSubfolder = async (sub: { id: number; name: string }) => {
-    setTrashNavLoading(true);
-    try {
-      const { data } = await getSpaceTrashFolderItems({ spaceId: space.id, folderId: sub.id, token });
-      setTrashNavStack((prev) => [...prev, { id: sub.id, name: sub.name, items: data.items ?? [], subfolders: data.folders ?? [] }]);
-    } catch {
-      // leave empty
-    } finally {
-      setTrashNavLoading(false);
-    }
-  };
-
-  const handleRestoreTrashFolderItem = async (item: SpaceItem) => {
-    setTrashActionId(item.itemId);
-    setTrashError(null);
-    try {
-      await restoreSpaceTrashItem({ spaceId: space.id, itemId: item.itemId, token });
-      setTrashNavStack((prev) => {
-        if (prev.length === 0) return prev;
-        const updated = [...prev];
-        const last = updated[updated.length - 1]!;
-        updated[updated.length - 1] = { ...last, items: last.items.filter((i) => i.itemId !== item.itemId) };
-        return updated;
-      });
-      await refreshItems();
-      await refreshFolders();
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Restore failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handleRestoreTrashSubfolder = async (sub: { id: number; name: string }) => {
-    setTrashActionId(`folder-${sub.id}`);
-    setTrashError(null);
-    try {
-      await restoreSpaceTrashFolder({ spaceId: space.id, folderId: sub.id, token });
-      setTrashNavStack((prev) => {
-        if (prev.length === 0) return prev;
-        const updated = [...prev];
-        const last = updated[updated.length - 1]!;
-        updated[updated.length - 1] = { ...last, subfolders: last.subfolders.filter((f) => f.id !== sub.id) };
-        return updated;
-      });
-      await refreshItems();
-      await refreshFolders();
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Restore failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handleRestoreTrashItem = async (item: SpaceItem) => {
-    setTrashActionId(item.itemId);
-    setTrashError(null);
-    try {
-      await restoreSpaceTrashItem({ spaceId: space.id, itemId: item.itemId, token });
-      setTrashItems((prev) => prev.filter((trashItem) => trashItem.itemId !== item.itemId));
-      await refreshItems();
-      await refreshFolders();
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Restore failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handlePermanentDeleteTrashItem = async (item: SpaceItem) => {
-    const confirmed = window.confirm(`Permanently delete "${item.displayName}"?`);
-    if (!confirmed) return;
-
-    setTrashActionId(item.itemId);
-    setTrashError(null);
-    try {
-      await permanentlyDeleteSpaceTrashItem({ spaceId: space.id, itemId: item.itemId, token });
-      setTrashItems((prev) => prev.filter((trashItem) => trashItem.itemId !== item.itemId));
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Permanent delete failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handleEmptyTrash = async () => {
-    if (trashItems.length === 0) return;
-    const confirmed = window.confirm('Permanently delete everything in trash?');
-    if (!confirmed) return;
-
-    setTrashActionId('empty');
-    setTrashError(null);
-    try {
-      await emptySpaceTrash({ spaceId: space.id, token });
-      setTrashItems([]);
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Empty trash failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handleBulkRestoreTrash = async () => {
-    if (selectedTrashIds.size === 0) return;
-    setTrashActionId('bulk');
-    setTrashError(null);
-    try {
-      await Promise.all(
-        [...selectedTrashIds].map((id) => restoreSpaceTrashItem({ spaceId: space.id, itemId: id, token }))
-      );
-      setTrashItems((prev) => prev.filter((item) => !selectedTrashIds.has(item.itemId)));
-      setSelectedTrashIds(new Set());
-      setTrashSelectMode(false);
-      await refreshItems();
-      await refreshFolders();
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Bulk restore failed');
-    } finally {
-      setTrashActionId(null);
-    }
-  };
-
-  const handleBulkPermanentDelete = async () => {
-    if (selectedTrashIds.size === 0) return;
-    const confirmed = window.confirm(`Permanently delete ${selectedTrashIds.size} item(s)?`);
-    if (!confirmed) return;
-    setTrashActionId('bulk');
-    setTrashError(null);
-    try {
-      await Promise.all(
-        [...selectedTrashIds].map((id) => permanentlyDeleteSpaceTrashItem({ spaceId: space.id, itemId: id, token }))
-      );
-      setTrashItems((prev) => prev.filter((item) => !selectedTrashIds.has(item.itemId)));
-      setSelectedTrashIds(new Set());
-      setTrashSelectMode(false);
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
-      setTrashError(apiErr?.error ?? 'Bulk delete failed');
-    } finally {
-      setTrashActionId(null);
     }
   };
 
@@ -755,18 +594,14 @@ export default function SpaceExplorer({
     setLikeOverrides((prev) => {
       let changed = false;
       const next = { ...prev };
-
       for (const item of items) {
         const override = next[item.itemId];
         if (!override) continue;
-
-        const serverLikedByMe = item.likedByMe ?? false;
-        if (serverLikedByMe === override.likedByMe) {
+        if ((item.likedByMe ?? false) === override.likedByMe) {
           delete next[item.itemId];
           changed = true;
         }
       }
-
       return changed ? next : prev;
     });
   }, [items]);
@@ -786,9 +621,7 @@ export default function SpaceExplorer({
       likeCount: likeOverrides[item.itemId]?.likeCount ?? item.likeCount ?? 0,
       likedByMe: likeOverrides[item.itemId]?.likedByMe ?? item.likedByMe ?? false,
     };
-
     if (likeRequestInFlight.current.has(item.itemId)) return;
-
     likeRequestInFlight.current.add(item.itemId);
     setLikeOverrides((prev) => ({
       ...prev,
@@ -797,7 +630,6 @@ export default function SpaceExplorer({
         likedByMe: !current.likedByMe,
       },
     }));
-
     try {
       const { data } = current.likedByMe
         ? await unlikeSpaceItem({ spaceId: space.id, itemId: item.itemId, token })
@@ -807,82 +639,44 @@ export default function SpaceExplorer({
         [item.itemId]: { likeCount: data.likeCount, likedByMe: data.likedByMe },
       }));
     } catch {
-      setLikeOverrides((prev) => ({
-        ...prev,
-        [item.itemId]: current,
-      }));
+      setLikeOverrides((prev) => ({ ...prev, [item.itemId]: current }));
     } finally {
       likeRequestInFlight.current.delete(item.itemId);
     }
   }, [likeOverrides, space.id, token]);
 
-  const {
-    data: allFolders,
-    refresh: refreshFolders,
-  } = useDeltaSync<DeltaFolder>(`${API_BASE}/spaces/${space.id}/folders`, {
-    token,
-    interval: POLL_INTERVAL,
-    idKey: 'id',
-  });
+  const { data: allFolders, refresh: refreshFolders } = useDeltaSync<DeltaFolder>(
+    `${API_BASE}/spaces/${space.id}/folders`,
+    { token, interval: POLL_INTERVAL, idKey: 'id' },
+  );
 
   const subfolders = allFolders.filter((f) => f.parent_id === (currentFolder?.id ?? null));
 
-  const folderOptions = useMemo(() => {
-    const activeFolders = allFolders.filter((folder) => !folder.deleted);
-    const byId = new Map(activeFolders.map((folder) => [folder.id, folder]));
-    const cache = new Map<number, string>();
-
-    const buildPath = (id: number): string => {
-      const cached = cache.get(id);
-      if (cached) return cached;
-
-      const folder = byId.get(id);
-      if (!folder) return '';
-
-      const path = folder.parent_id != null && byId.has(folder.parent_id)
-        ? `${buildPath(folder.parent_id)}/${folder.name}`
-        : folder.name;
-
-      cache.set(id, path);
-      return path;
-    };
-
-    return activeFolders
-      .map((folder) => ({ id: folder.id, label: buildPath(folder.id) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [allFolders]);
-
-  const moveTargetFolderOptions = useMemo(() => {
-    if (!moveFolder) return folderOptions;
-
-    const activeFolders = allFolders.filter((folder) => !folder.deleted);
-    const byId = new Map(activeFolders.map((folder) => [folder.id, folder]));
-    const isSelfOrDescendant = (folderId: number): boolean => {
-      if (folderId === moveFolder.id) return true;
-      let current = byId.get(folderId);
-      while (current?.parent_id != null) {
-        if (current.parent_id === moveFolder.id) return true;
-        current = byId.get(current.parent_id);
+  /* Excluded folder IDs for move-folder picker (can't move into self or descendant) */
+  const excludedFolderIds = useMemo(() => {
+    if (!moveFolder) return new Set<number>();
+    const result = new Set<number>([moveFolder.id]);
+    const queue = [moveFolder.id];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      for (const f of allFolders) {
+        if (f.parent_id === parentId && !f.deleted && !result.has(f.id)) {
+          result.add(f.id);
+          queue.push(f.id);
+        }
       }
-      return false;
-    };
-
-    return folderOptions.filter((folder) => !isSelfOrDescendant(folder.id));
-  }, [allFolders, folderOptions, moveFolder]);
+    }
+    return result;
+  }, [moveFolder, allFolders]);
 
   const resolveMeta = useCallback(async () => {
     setMetaLoading(true);
     setMetaError(null);
     try {
-      const { data } = await getSpaceExplorer({
-        spaceId: space.id,
-        token,
-        path: folderPath || undefined,
-      });
+      const { data } = await getSpaceExplorer({ spaceId: space.id, token, path: folderPath || undefined });
       setBreadcrumbs(data.breadcrumbs);
       setCurrentFolder(data.currentFolder);
-      const newFolderId = data.currentFolder?.id ?? null;
-      onFolderChange?.(newFolderId);
+      onFolderChange?.(data.currentFolder?.id ?? null);
     } catch {
       setMetaError('Folder not found');
     } finally {
@@ -891,37 +685,22 @@ export default function SpaceExplorer({
   }, [space.id, token, folderPath, onFolderChange]);
 
   const isMountMeta = useRef(true);
-  useEffect(() => {
-    void resolveMeta();
-  }, [resolveMeta]);
+  useEffect(() => { void resolveMeta(); }, [resolveMeta]);
 
   useEffect(() => {
-    if (isMountMeta.current) {
-      isMountMeta.current = false;
-      return;
-    }
+    if (isMountMeta.current) { isMountMeta.current = false; return; }
     void refreshFolders();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderPath]);
 
   const isMountRefresh = useRef(true);
   useEffect(() => {
-    if (isMountRefresh.current) {
-      isMountRefresh.current = false;
-      return;
-    }
+    if (isMountRefresh.current) { isMountRefresh.current = false; return; }
     void refreshItems();
   }, [refreshTrigger, refreshItems]);
 
-  useEffect(() => {
-    void refreshItems();
-  }, [currentFolder?.id, refreshItems]);
+  useEffect(() => { void refreshItems(); }, [currentFolder?.id, refreshItems]);
 
-  useEffect(() => {
-    if (viewMode === 'trash') void fetchTrash();
-  }, [viewMode, fetchTrash]);
-
-  // Close dropdown on outside click
   useEffect(() => {
     if (openMenuId == null) return;
     const close = () => setOpenMenuId(null);
@@ -936,9 +715,7 @@ export default function SpaceExplorer({
       else if (e.key === 'ArrowLeft')
         setLightboxIndex((prev) => (prev == null ? prev : Math.max(0, prev - 1)));
       else if (e.key === 'ArrowRight')
-        setLightboxIndex((prev) =>
-          prev == null ? prev : Math.min(displayItems.length - 1, prev + 1),
-        );
+        setLightboxIndex((prev) => prev == null ? prev : Math.min(displayItems.length - 1, prev + 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -954,331 +731,133 @@ export default function SpaceExplorer({
   };
 
   const navigateToBreadcrumb = (index: number) => {
-    const segments = breadcrumbs
-      .slice(0, index + 1)
-      .map((b) => encodeURIComponent(b.name));
+    const segments = breadcrumbs.slice(0, index + 1).map((b) => encodeURIComponent(b.name));
     navigate(`/spaces/${space.id}/${segments.join('/')}`);
   };
 
   const navigateToRoot = () => navigate(`/spaces/${space.id}`);
 
+  const navigateBack = () => {
+    if (!currentFolder) return;
+    if (breadcrumbs.length === 0) navigateToRoot();
+    else navigateToBreadcrumb(breadcrumbs.length - 1);
+  };
+
   const activeItem = lightboxIndex == null ? null : (displayItems[lightboxIndex] ?? null);
   const hasPrev = lightboxIndex != null && lightboxIndex > 0;
   const hasNext = lightboxIndex != null && lightboxIndex < displayItems.length - 1;
-
-  const loading = viewMode === 'trash' ? trashLoading : metaLoading || itemsLoading;
-  const error = viewMode === 'trash' ? trashError : metaError ?? itemsError;
-  const currentNavEntry = trashNavStack.length > 0 ? trashNavStack[trashNavStack.length - 1] : null;
-  const isEmpty = viewMode === 'trash'
-    ? currentNavEntry
-      ? currentNavEntry.items.length === 0 && currentNavEntry.subfolders.length === 0
-      : trashItems.length === 0 && trashFolders.length === 0
-    : subfolders.length === 0 && displayItems.length === 0;
+  const loading = metaLoading || itemsLoading;
+  const error = metaError ?? itemsError;
+  const isEmpty = subfolders.length === 0 && displayItems.length === 0;
 
   return (
     <section className="space-explorer">
+
+      {/* ── Toolbar ── */}
       <div className="space-explorer__header">
-        <h3 className="space-explorer__title">{viewMode === 'trash' ? 'Trash' : 'Explorer'}</h3>
-        <div className="space-explorer__header-actions">
-          {viewMode === 'files' && canWrite(role) && !selectMode && (
-            <button onClick={() => setShowNewFolder(true)}>New Folder</button>
-          )}
-          {viewMode === 'files' && selectMode && totalSelected > 0 && (
-            <button onClick={handleDownload}>Download ({totalSelected})</button>
-          )}
-          {viewMode === 'files' && selectMode && totalSelected > 0 && (selectedItemIds.size > 0 ? canMoveItemsToTrash(role) : canManageTrash(role)) && (
-            <button onClick={() => { void handleBulkTrash(); }}>Trash ({totalSelected})</button>
-          )}
-          {viewMode === 'files' && selectMode && totalSelected > 0 && canWrite(role) && (
-            <button onClick={() => { setBulkMoveTarget('root'); setBulkMoveError(null); setBulkMoveOpen(true); }}>
-              Move ({totalSelected})
-            </button>
-          )}
-          {viewMode === 'files' && selectMode && totalSelected > 0 && canWrite(role) && (
-            <button onClick={() => { setBulkCopyTarget('root'); setBulkCopyError(null); setBulkCopyOpen(true); }}>
-              Copy ({totalSelected})
-            </button>
-          )}
-          {viewMode === 'files' && (
-            <button onClick={toggleSelectMode}>
-              {selectMode ? 'Cancel' : 'Select'}
-            </button>
-          )}
+        <div className="space-explorer__toolbar">
           <button
-            onClick={() => {
-              setViewMode((prev) => (prev === 'files' ? 'trash' : 'files'));
-              setOpenMenuId(null);
-              setSelectedItem(null);
-              setSelectMode(false);
-              setTrashOffset(0);
-              setTrashHasMore(false);
-              setTrashSelectMode(false);
-              setSelectedTrashIds(new Set());
-              setTrashNavStack([]);
-            }}
+            className="explorer-toolbar__icon-btn"
+            title={loading ? 'Refreshing…' : 'Refresh'}
+            disabled={loading}
+            onClick={() => { void refreshItems(); void refreshFolders(); }}
+          ><IconRefresh /></button>
+
+          {canWrite(role) && !selectMode && (
+            <button className="explorer-toolbar__icon-btn" title="New folder" onClick={() => setShowNewFolder(true)}>
+              <IconNewFolder />
+            </button>
+          )}
+
+          {onUpload && canWrite(role) && (
+            <button className="explorer-toolbar__icon-btn" title="Upload" onClick={onUpload}><IconUpload /></button>
+          )}
+
+          <button
+            className={`explorer-toolbar__icon-btn${selectMode ? ' explorer-toolbar__icon-btn--active' : ''}`}
+            title={selectMode ? 'Exit selection' : 'Select items'}
+            onClick={toggleSelectMode}
           >
-            {viewMode === 'trash' ? 'Back to files' : 'Trash'}
+            <IconSelect />
           </button>
-          {viewMode === 'trash' && trashNavStack.length === 0 && (trashItems.length > 0 || trashFolders.length > 0) && (
-            <button onClick={() => { setTrashSelectMode((p) => !p); setSelectedTrashIds(new Set()); }}>
-              {trashSelectMode ? 'Cancel' : 'Select'}
-            </button>
-          )}
-          {viewMode === 'trash' && trashNavStack.length === 0 && trashSelectMode && selectedTrashIds.size > 0 && canRestoreTrash(role) && (
-            <button onClick={() => { void handleBulkRestoreTrash(); }} disabled={trashActionId !== null}>
-              Restore ({selectedTrashIds.size})
-            </button>
-          )}
-          {viewMode === 'trash' && trashNavStack.length === 0 && trashSelectMode && selectedTrashIds.size > 0 && canManageTrash(role) && (
-            <button className="space-explorer__trash-danger" onClick={() => { void handleBulkPermanentDelete(); }} disabled={trashActionId !== null}>
-              Delete forever ({selectedTrashIds.size})
-            </button>
-          )}
-          {viewMode === 'trash' && trashNavStack.length === 0 && !trashSelectMode && canManageTrash(role) && (trashItems.length > 0 || trashFolders.length > 0) && (
-            <button onClick={() => { void handleEmptyTrash(); }} disabled={trashActionId === 'empty'}>
-              {trashActionId === 'empty' ? 'Emptying…' : 'Empty Trash'}
-            </button>
-          )}
-          {!selectMode && (
-            <button
-              onClick={() => {
-                if (viewMode === 'trash') void fetchTrash();
-                else { void refreshItems(); void refreshFolders(); }
-              }}
-              disabled={loading}
-            >
-              {loading ? 'Refreshing…' : 'Refresh'}
-            </button>
+
+          {selectMode && totalSelected > 0 && (
+            <>
+              {canWrite(role) && (
+                <button
+                  className="explorer-toolbar__icon-btn"
+                  title={`Move ${totalSelected} selected`}
+                  onClick={() => { setBulkMoveError(null); setBulkMoveOpen(true); }}
+                ><IconMove /></button>
+              )}
+              {canWrite(role) && selectedItemIds.size > 0 && (
+                <button
+                  className="explorer-toolbar__icon-btn"
+                  title={`Copy ${selectedItemIds.size} selected`}
+                  onClick={() => { setBulkCopyError(null); setBulkCopyOpen(true); }}
+                ><IconCopy /></button>
+              )}
+              <button
+                className="explorer-toolbar__icon-btn"
+                title={`Download ${totalSelected} selected`}
+                onClick={handleDownload}
+              ><IconDownload /></button>
+              {(selectedItemIds.size > 0 ? canMoveItemsToTrash(role) : canManageTrash(role)) && (
+                <button
+                  className="explorer-toolbar__icon-btn explorer-toolbar__icon-btn--danger"
+                  title={`Move ${totalSelected} to trash`}
+                  onClick={() => { void handleBulkTrash(); }}
+                >🗑</button>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {viewMode === 'files' && <nav className="space-explorer__breadcrumb" aria-label="folder path">
-        <button type="button" className="space-explorer__breadcrumb-item" onClick={navigateToRoot}>
-          🏠
+      {/* ── Breadcrumb — pill nav ── */}
+      <nav className="space-explorer__breadcrumb" aria-label="folder path">
+        {currentFolder && (
+          <button type="button" className="space-explorer__breadcrumb-back" onClick={navigateBack} aria-label="Go up">
+            <IconBack />
+          </button>
+        )}
+        <button
+          type="button"
+          className={`space-explorer__breadcrumb-pill${!currentFolder ? ' space-explorer__breadcrumb-pill--current' : ''}`}
+          onClick={navigateToRoot}
+        >
+          <IconHome className="space-explorer__breadcrumb-home-icon" /> root
         </button>
         {breadcrumbs.map((crumb, i) => (
-          <>
-            <span key={`sep-${crumb.id}`} className="space-explorer__breadcrumb-sep">/</span>
+          <span key={crumb.id} className="space-explorer__breadcrumb-group">
+            <span className="space-explorer__breadcrumb-sep">›</span>
             <button
-              key={crumb.id}
               type="button"
-              className="space-explorer__breadcrumb-item"
+              className="space-explorer__breadcrumb-pill"
               onClick={() => navigateToBreadcrumb(i)}
             >
               {crumb.name}
             </button>
-          </>
+          </span>
         ))}
         {currentFolder && (
-          <>
-            <span className="space-explorer__breadcrumb-sep">/</span>
-            <span className="space-explorer__breadcrumb-item space-explorer__breadcrumb-item--current">
+          <span className="space-explorer__breadcrumb-group">
+            <span className="space-explorer__breadcrumb-sep">›</span>
+            <span className="space-explorer__breadcrumb-pill space-explorer__breadcrumb-pill--current">
               {currentFolder.name}
             </span>
-          </>
+          </span>
         )}
-      </nav>}
+      </nav>
 
-      {viewMode === 'trash' && trashNavStack.length === 0 && (
-        <p className="space-explorer__message">
-          Trashed items are permanently deleted after 7 days.
-        </p>
-      )}
-      {viewMode === 'trash' && trashNavStack.length > 0 && (
-        <p className="space-explorer__message" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => setTrashNavStack([])}>← Trash</button>
-          {trashNavStack.map((entry, i) => (
-            <span key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span className="space-explorer__breadcrumb-sep">/</span>
-              {i < trashNavStack.length - 1 ? (
-                <button type="button" onClick={() => setTrashNavStack((prev) => prev.slice(0, i + 1))}>
-                  📁 {entry.name}
-                </button>
-              ) : (
-                <span>📁 {entry.name}</span>
-              )}
-            </span>
-          ))}
-          {trashNavLoading && <span>Loading…</span>}
-        </p>
-      )}
       {loading && isEmpty && <p className="space-explorer__message">Loading…</p>}
       {error && <p className="space-explorer__message space-explorer__message--error">{error}</p>}
-      {!loading && !error && isEmpty && (
-        <p className="space-explorer__message">
-          {viewMode === 'trash' ? 'Trash is empty.' : 'This folder is empty.'}
-        </p>
-      )}
+      {!loading && !error && isEmpty && <p className="space-explorer__message">This folder is empty.</p>}
 
       <div className="space-explorer__body">
-        {viewMode === 'trash' && currentNavEntry && (
+        {(subfolders.length > 0 || displayItems.length > 0) && (
           <div className="space-explorer__grid">
-            {currentNavEntry.items.length === 0 && currentNavEntry.subfolders.length === 0 && !trashNavLoading && (
-              <p className="space-explorer__message">This folder is empty.</p>
-            )}
-            {currentNavEntry.subfolders.map((sub) => (
-              <div key={`tsub-${sub.id}`} className="space-explorer__tile-wrap">
-                <button
-                  type="button"
-                  className="space-explorer__tile--folder"
-                  onClick={() => { void openTrashSubfolder(sub); }}
-                  title={`Open ${sub.name}`}
-                >
-                  <span className="space-explorer__folder-icon">📁</span>
-                  <span className="space-explorer__folder-name">{sub.name}</span>
-                </button>
-                <div className="space-explorer__trash-actions">
-                  {canRestoreTrash(role) && (
-                    <button
-                      type="button"
-                      onClick={() => { void handleRestoreTrashSubfolder(sub); }}
-                      disabled={trashActionId !== null}
-                    >
-                      {trashActionId === `folder-${sub.id}` ? 'Working…' : 'Restore'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {currentNavEntry.items.map((item) => (
-              <div key={item.itemId} className="space-explorer__tile-wrap">
-                <div className="space-explorer__tile--item">
-                  <button type="button" className="space-explorer__tile-btn" title={item.displayName}>
-                    <AuthenticatedImage
-                      src={itemThumbnailUrl(space.id, item.itemId)}
-                      token={token}
-                      alt={item.displayName}
-                      loading="lazy"
-                      className="space-explorer__thumb"
-                    />
-                  </button>
-                </div>
-                <div className="space-explorer__trash-actions">
-                  <span className="space-explorer__trash-meta">
-                    {formatRemainingTrashTime(item.expiresAt)}
-                  </span>
-                  {canRestoreTrash(role) && (
-                    <button
-                      type="button"
-                      onClick={() => { void handleRestoreTrashFolderItem(item); }}
-                      disabled={trashActionId !== null}
-                    >
-                      {trashActionId === item.itemId ? 'Working…' : 'Restore'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
-        {viewMode === 'trash' && !currentNavEntry && (trashItems.length > 0 || trashFolders.length > 0) && (
-          <div className="space-explorer__grid">
-            {trashFolders.map((folder) => (
-              <div key={`tf-${folder.folderId}`} className="space-explorer__tile-wrap">
-                <button
-                  type="button"
-                  className="space-explorer__tile--folder"
-                  onClick={() => { void openTrashFolder(folder); }}
-                  title={`Open ${folder.name}`}
-                >
-                  <span className="space-explorer__folder-icon">📁</span>
-                  <span className="space-explorer__folder-name">{folder.name}</span>
-                </button>
-                <div className="space-explorer__trash-actions">
-                  <span className="space-explorer__trash-meta">
-                    {formatRemainingTrashTime(folder.expiresAt)}
-                  </span>
-                  {canRestoreTrash(role) && (
-                    <button
-                      type="button"
-                      onClick={() => { void handleRestoreTrashFolder(folder); }}
-                      disabled={trashActionId !== null}
-                    >
-                      {trashActionId === `folder-${folder.folderId}` ? 'Working…' : 'Restore all'}
-                    </button>
-                  )}
-                  {canManageTrash(role) && (
-                    <button
-                      type="button"
-                      className="space-explorer__trash-danger"
-                      onClick={() => { void handlePermanentDeleteTrashFolder(folder); }}
-                      disabled={trashActionId !== null}
-                    >
-                      Delete forever
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {trashItems.map((item) => (
-              <div
-                key={item.itemId}
-                className={`space-explorer__tile-wrap${trashSelectMode && selectedTrashIds.has(item.itemId) ? ' space-explorer__tile-wrap--selected' : ''}`}
-              >
-                <div className="space-explorer__tile--item">
-                  <button
-                    type="button"
-                    className="space-explorer__tile-btn"
-                    title={item.displayName}
-                    onClick={trashSelectMode ? () => {
-                      setSelectedTrashIds((prev) => {
-                        const next = new Set(prev);
-                        next.has(item.itemId) ? next.delete(item.itemId) : next.add(item.itemId);
-                        return next;
-                      });
-                    } : undefined}
-                  >
-                    {trashSelectMode && (
-                      <span className="space-explorer__select-check">
-                        {selectedTrashIds.has(item.itemId) ? '☑' : '☐'}
-                      </span>
-                    )}
-                    <AuthenticatedImage
-                      src={itemThumbnailUrl(space.id, item.itemId)}
-                      token={token}
-                      alt={item.displayName}
-                      loading="lazy"
-                      className="space-explorer__thumb"
-                    />
-                  </button>
-                </div>
-                <div className="space-explorer__trash-actions">
-                  <span className="space-explorer__trash-meta">
-                    {formatRemainingTrashTime(item.expiresAt)}
-                  </span>
-                  {!trashSelectMode && (canRestoreTrash(role) || canManageTrash(role)) && (
-                    <>
-                      {canRestoreTrash(role) && (
-                        <button
-                          type="button"
-                          onClick={() => { void handleRestoreTrashItem(item); }}
-                          disabled={trashActionId !== null}
-                        >
-                          {trashActionId === item.itemId ? 'Working…' : 'Restore'}
-                        </button>
-                      )}
-                      {canManageTrash(role) && (
-                        <button
-                          type="button"
-                          className="space-explorer__trash-danger"
-                          onClick={() => { void handlePermanentDeleteTrashItem(item); }}
-                          disabled={trashActionId !== null}
-                        >
-                          Delete forever
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {viewMode === 'files' && (subfolders.length > 0 || displayItems.length > 0) && (
-          <div className="space-explorer__grid">
             {subfolders.map((folder) => (
               <div
                 key={`folder-${folder.id}`}
@@ -1295,9 +874,10 @@ export default function SpaceExplorer({
                       {selectedFolderIds.has(folder.id) ? '☑' : '☐'}
                     </span>
                   )}
-                  <span className="space-explorer__folder-icon">📁</span>
+                  <span className="space-explorer__folder-icon"><IconNewFolder /></span>
                   <span className="space-explorer__folder-name">{folder.name}</span>
                 </button>
+
                 {!selectMode && canWrite(role) && (
                   <button
                     type="button"
@@ -1307,36 +887,34 @@ export default function SpaceExplorer({
                       e.stopPropagation();
                       setOpenMenuId(openMenuId !== `folder-${folder.id}` ? `folder-${folder.id}` : null);
                     }}
-                  >
-                    ⋮
-                  </button>
+                  ><IconDots /></button>
                 )}
 
                 {openMenuId === `folder-${folder.id}` && (
                   <div className="space-explorer__menu" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { handleMoveFolder(folder); }}
-                    >Move to folder</button>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { handleCopyFolderTo(folder); }}
-                    >Copy to folder</button>
+                    <button type="button" className="space-explorer__menu-item" onClick={() => handleMoveFolder(folder)}>
+                      Move to folder
+                    </button>
+                    <button type="button" className="space-explorer__menu-item" onClick={() => handleCopyFolderTo(folder)}>
+                      Copy to folder
+                    </button>
                     <button
                       type="button"
                       className="space-explorer__menu-item space-explorer__menu-item--danger"
                       onClick={() => { void handleDeleteFolder(folder); }}
-                    >Move to trash</button>
+                    >
+                      Move to trash
+                    </button>
                   </div>
                 )}
               </div>
             ))}
 
             {displayItems.map((item, index) => (
-              <div key={item.itemId} className={`space-explorer__tile-wrap${selectedItemIds.has(item.itemId) ? ' space-explorer__tile-wrap--selected' : ''}`}>
-                {/* Image container — overflow:hidden stays here only */}
+              <div
+                key={item.itemId}
+                className={`space-explorer__tile-wrap space-explorer__tile-wrap--item${selectedItemIds.has(item.itemId) ? ' space-explorer__tile-wrap--selected' : ''}`}
+              >
                 <div className="space-explorer__tile--item">
                   {selectMode && (
                     <span className="space-explorer__select-check">
@@ -1357,37 +935,31 @@ export default function SpaceExplorer({
                       className="space-explorer__thumb"
                     />
                   </button>
-                  {!selectMode && (
-                    <button
-                      type="button"
-                      className={`space-explorer__like-btn ${item.likedByMe ? 'space-explorer__like-btn--active' : ''}`}
-                      aria-label={`${item.likedByMe ? 'Unlike' : 'Like'} ${item.displayName}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleLikeItem(item);
-                      }}
-                    >
-                      <span aria-hidden="true">♥</span>
-                      <span>{item.likeCount}</span>
-                    </button>
-                  )}
                 </div>
 
-                {/* ⋮ button lives outside overflow:hidden */}
-                <button
-                  type="button"
-                  className="space-explorer__menu-btn"
-                  aria-label="Item options"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenMenuId(openMenuId !== item.itemId ? item.itemId : null);
-                  }}
-                >
-                  ⋮
-                </button>
+                {/* name + ⋮ below the thumbnail */}
+                <div className="space-explorer__tile-footer">
+                  <span className="space-explorer__item-name" title={item.displayName}>
+                    {item.displayName}
+                  </span>
+                  <button
+                    type="button"
+                    className="space-explorer__tile-menu-btn"
+                    aria-label="Item options"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenuId(openMenuId !== item.itemId ? item.itemId : null);
+                    }}
+                  ><IconDots /></button>
+                </div>
 
                 {openMenuId === item.itemId && (
-                  <div className="space-explorer__menu" onClick={(e) => e.stopPropagation()}>
+                  <div className="space-explorer__menu space-explorer__menu--above" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="space-explorer__menu-item"
+                      onClick={() => { setSelectedItem(item); setOpenMenuId(null); }}
+                    >Info</button>
                     <button
                       type="button"
                       className="space-explorer__menu-item"
@@ -1409,22 +981,15 @@ export default function SpaceExplorer({
                     <button
                       type="button"
                       className="space-explorer__menu-item"
-                      onClick={() => { handleMoveToFolder(item); }}
+                      onClick={() => handleMoveToFolder(item)}
                     >Move to folder</button>
                     {canWrite(role) && (
                       <button
                         type="button"
                         className="space-explorer__menu-item"
-                        onClick={() => { handleCopyToFolder(item); }}
+                        onClick={() => handleCopyToFolder(item)}
                       >Copy to folder</button>
                     )}
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { setSelectedItem(item); setOpenMenuId(null); }}
-                    >
-                      Get details
-                    </button>
                     {canMoveItemsToTrash(role) && (
                       <>
                         <hr className="space-explorer__menu-divider" />
@@ -1432,9 +997,7 @@ export default function SpaceExplorer({
                           type="button"
                           className="space-explorer__menu-item space-explorer__menu-item--danger"
                           onClick={() => { void handleDelete(item); }}
-                        >
-                          Move to trash
-                        </button>
+                        >Move to trash</button>
                       </>
                     )}
                   </div>
@@ -1444,22 +1007,9 @@ export default function SpaceExplorer({
           </div>
         )}
 
-        {viewMode === 'files' && itemsNextCursor && (
-          <button
-            className="space-explorer__load-more"
-            onClick={() => void loadMoreItems()}
-          >
+        {itemsNextCursor && (
+          <button className="space-explorer__load-more" onClick={() => void loadMoreItems()}>
             Load more
-          </button>
-        )}
-
-        {viewMode === 'trash' && trashHasMore && (
-          <button
-            className="space-explorer__load-more"
-            onClick={() => void fetchTrash(trashOffset + TRASH_LIMIT)}
-            disabled={trashLoading}
-          >
-            {trashLoading ? 'Loading…' : 'Load more'}
           </button>
         )}
 
@@ -1470,9 +1020,7 @@ export default function SpaceExplorer({
               className="space-explorer__info-close"
               onClick={() => setSelectedItem(null)}
               aria-label="Close info panel"
-            >
-              ✕
-            </button>
+            >✕</button>
             <AuthenticatedImage
               src={itemThumbnailUrl(space.id, selectedItem.itemId)}
               token={token}
@@ -1481,17 +1029,15 @@ export default function SpaceExplorer({
             />
             <h4 className="space-explorer__info-name">{selectedItem.displayName}</h4>
             <dl className="space-explorer__info-dl">
-              <dt>Type</dt>
-              <dd>{selectedItem.mimeType}</dd>
-              <dt>Uploaded</dt>
-              <dd>{formatDate(selectedItem.uploadedAt)}</dd>
-              <dt>Size</dt>
-              <dd>{formatBytes(selectedItem.sizeBytes)}</dd>
+              <dt>Type</dt><dd>{selectedItem.mimeType}</dd>
+              <dt>Uploaded</dt><dd>{formatDate(selectedItem.uploadedAt)}</dd>
+              <dt>Size</dt><dd>{formatBytes(selectedItem.sizeBytes)}</dd>
             </dl>
           </aside>
         )}
       </div>
 
+      {/* ── Lightbox ── */}
       {activeItem && (
         <div
           className="space-explorer__lightbox"
@@ -1501,34 +1047,19 @@ export default function SpaceExplorer({
           onClick={() => setLightboxIndex(null)}
         >
           <div className="space-explorer__lightbox-content" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className="space-explorer__lightbox-close"
-              onClick={() => setLightboxIndex(null)}
-              aria-label="Close"
-            >
-              ✕
-            </button>
+            <button type="button" className="space-explorer__lightbox-close" onClick={() => setLightboxIndex(null)} aria-label="Close">✕</button>
             <div className="space-explorer__lightbox-stage">
               <button
                 type="button"
                 className="space-explorer__lightbox-hit space-explorer__lightbox-hit--prev"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex((prev) => (prev == null ? prev : Math.max(0, prev - 1)));
-                }}
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((p) => (p == null ? p : Math.max(0, p - 1))); }}
                 disabled={!hasPrev}
                 aria-label="Previous"
               />
               <button
                 type="button"
                 className="space-explorer__lightbox-hit space-explorer__lightbox-hit--next"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLightboxIndex((prev) =>
-                    prev == null ? prev : Math.min(displayItems.length - 1, prev + 1),
-                  );
-                }}
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((p) => p == null ? p : Math.min(displayItems.length - 1, p + 1)); }}
                 disabled={!hasNext}
                 aria-label="Next"
               />
@@ -1537,9 +1068,7 @@ export default function SpaceExplorer({
                   src={itemFileUrl(space.id, activeItem.itemId)}
                   token={token}
                   className="space-explorer__lightbox-video"
-                  controls
-                  autoPlay
-                  playsInline
+                  controls autoPlay playsInline
                 />
               ) : (
                 <AuthenticatedImage
@@ -1554,7 +1083,7 @@ export default function SpaceExplorer({
               <p className="space-explorer__lightbox-name">{activeItem.displayName}</p>
               <button
                 type="button"
-                className={`space-explorer__lightbox-like ${activeItem.likedByMe ? 'space-explorer__lightbox-like--active' : ''}`}
+                className={`space-explorer__lightbox-like${activeItem.likedByMe ? ' space-explorer__lightbox-like--active' : ''}`}
                 onClick={() => void handleLikeItem(activeItem)}
               >
                 <span aria-hidden="true">♥</span>
@@ -1582,191 +1111,103 @@ export default function SpaceExplorer({
         />
       )}
 
+      {/* ── Picker modals (FolderPicker replaces <select>) ── */}
+
       {bulkMoveOpen && (
         <Modal
           title={<>Move {totalSelected} selected</>}
-          onClose={() => {
-            if (!bulkMoveLoading) {
-              setBulkMoveOpen(false);
-              setBulkMoveError(null);
-            }
-          }}
+          onClose={() => { if (!bulkMoveLoading) { setBulkMoveOpen(false); setBulkMoveError(null); } }}
         >
-          <form className="modal__form" onSubmit={(e) => { void submitBulkMove(e); }}>
-            <select
-              className="modal__input"
-              value={bulkMoveTarget}
-              onChange={(e) => setBulkMoveTarget(e.target.value)}
-              disabled={bulkMoveLoading}
-            >
-              <option value="root">Root (no folder)</option>
-              {folderOptions.map((folder) => (
-                <option key={folder.id} value={String(folder.id)}>
-                  {folder.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="modal__btn modal__btn--primary modal__btn--full"
-              disabled={bulkMoveLoading}
-            >
-              {bulkMoveLoading ? 'Moving…' : 'Move'}
-            </button>
-            {bulkMoveError && <p className="modal__error">{bulkMoveError}</p>}
-          </form>
+          <FolderPicker
+            space={space}
+            token={token}
+            allFolders={allFolders}
+            excludeFolderIds={new Set()}
+            loading={bulkMoveLoading}
+            error={bulkMoveError}
+            onConfirm={(fid) => void doMoveSelected(fid)}
+            confirmLabel="Move"
+          />
         </Modal>
       )}
 
-      {(moveItem || moveFolder) && (
+      {(moveItem != null || moveFolder != null) && (
         <Modal
-          title={
-            <>
-              Move <span className="modal__title-accent">{moveItem?.displayName ?? moveFolder?.name}</span>
-            </>
-          }
-          onClose={() => {
-            if (!moveLoading) {
-              setMoveItem(null);
-              setMoveFolder(null);
-              setMoveError(null);
-            }
-          }}
+          title={<>Move <span className="modal__title-accent">{moveItem?.displayName ?? moveFolder?.name}</span></>}
+          onClose={() => { if (!moveLoading) { setMoveItem(null); setMoveFolder(null); setMoveError(null); } }}
         >
-          <form className="modal__form" onSubmit={(e) => { void submitMoveToFolder(e); }}>
-            <select
-              className="modal__input"
-              value={moveTargetFolder}
-              onChange={(e) => setMoveTargetFolder(e.target.value)}
-              disabled={moveLoading}
-            >
-              <option value="root">Root (no folder)</option>
-              {moveTargetFolderOptions.map((folder) => (
-                <option key={folder.id} value={String(folder.id)}>
-                  {folder.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="modal__btn modal__btn--primary modal__btn--full"
-              disabled={moveLoading}
-            >
-              {moveLoading ? 'Moving…' : 'Move'}
-            </button>
-            {moveError && <p className="modal__error">{moveError}</p>}
-          </form>
+          <FolderPicker
+            space={space}
+            token={token}
+            allFolders={allFolders}
+            excludeFolderIds={excludedFolderIds}
+            loading={moveLoading}
+            error={moveError}
+            onConfirm={(fid) => void doMoveItem(fid)}
+            confirmLabel="Move"
+          />
         </Modal>
       )}
 
-      {copyItem && (
+      {copyItem != null && (
         <Modal
-          title={
-            <>
-              Copy <span className="modal__title-accent">{copyItem.displayName}</span>
-            </>
-          }
-          onClose={() => {
-            if (!copyLoading) {
-              setCopyItem(null);
-              setCopyError(null);
-            }
-          }}
+          title={<>Copy <span className="modal__title-accent">{copyItem.displayName}</span></>}
+          onClose={() => { if (!copyLoading) { setCopyItem(null); setCopyError(null); } }}
         >
-          <form className="modal__form" onSubmit={(e) => { void submitCopyToFolder(e); }}>
-            <select
-              className="modal__input"
-              value={copyTargetFolder}
-              onChange={(e) => setCopyTargetFolder(e.target.value)}
-              disabled={copyLoading}
-            >
-              <option value="root">Root (no folder)</option>
-              {folderOptions.map((folder) => (
-                <option key={folder.id} value={String(folder.id)}>
-                  {folder.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="modal__btn modal__btn--primary modal__btn--full"
-              disabled={copyLoading}
-            >
-              {copyLoading ? 'Copying…' : 'Copy'}
-            </button>
-            {copyError && <p className="modal__error">{copyError}</p>}
-          </form>
+          <FolderPicker
+            space={space}
+            token={token}
+            allFolders={allFolders}
+            excludeFolderIds={new Set()}
+            loading={copyLoading}
+            error={copyError}
+            onConfirm={(fid) => void doCopyItem(fid)}
+            confirmLabel="Copy"
+          />
         </Modal>
       )}
 
-      {copyFolder && (
+      {copyFolder != null && (
         <Modal
           title={<>Copy <span className="modal__title-accent">{copyFolder.name}</span></>}
           onClose={() => { if (!copyFolderLoading) { setCopyFolder(null); setCopyFolderError(null); } }}
         >
-          <form className="modal__form" onSubmit={(e) => { void submitCopyFolderTo(e); }}>
-            <select
-              className="modal__input"
-              value={copyFolderTarget}
-              onChange={(e) => setCopyFolderTarget(e.target.value)}
-              disabled={copyFolderLoading}
-            >
-              <option value="root">Root (no folder)</option>
-              {folderOptions.map((f) => (
-                <option key={f.id} value={String(f.id)}>{f.label}</option>
-              ))}
-            </select>
-            <button type="submit" className="modal__btn modal__btn--primary modal__btn--full" disabled={copyFolderLoading}>
-              {copyFolderLoading ? 'Copying…' : 'Copy'}
-            </button>
-            {copyFolderError && <p className="modal__error">{copyFolderError}</p>}
-          </form>
+          <FolderPicker
+            space={space}
+            token={token}
+            allFolders={allFolders}
+            excludeFolderIds={new Set()}
+            loading={copyFolderLoading}
+            error={copyFolderError}
+            onConfirm={(fid) => void doCopyFolderTo(fid)}
+            confirmLabel="Copy"
+          />
         </Modal>
       )}
 
       {bulkCopyOpen && (
         <Modal
           title={<>Copy {selectedItemIds.size} item(s)</>}
-          onClose={() => {
-            if (!bulkCopyLoading) {
-              setBulkCopyOpen(false);
-              setBulkCopyError(null);
-            }
-          }}
+          onClose={() => { if (!bulkCopyLoading) { setBulkCopyOpen(false); setBulkCopyError(null); } }}
         >
-          <form className="modal__form" onSubmit={(e) => { void submitBulkCopy(e); }}>
-            <select
-              className="modal__input"
-              value={bulkCopyTarget}
-              onChange={(e) => setBulkCopyTarget(e.target.value)}
-              disabled={bulkCopyLoading}
-            >
-              <option value="root">Root (no folder)</option>
-              {folderOptions.map((folder) => (
-                <option key={folder.id} value={String(folder.id)}>
-                  {folder.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="modal__btn modal__btn--primary modal__btn--full"
-              disabled={bulkCopyLoading}
-            >
-              {bulkCopyLoading ? 'Copying…' : 'Copy'}
-            </button>
-            {bulkCopyError && <p className="modal__error">{bulkCopyError}</p>}
-          </form>
+          <FolderPicker
+            space={space}
+            token={token}
+            allFolders={allFolders}
+            excludeFolderIds={new Set()}
+            loading={bulkCopyLoading}
+            error={bulkCopyError}
+            onConfirm={(fid) => void doCopySelected(fid)}
+            confirmLabel="Copy"
+          />
         </Modal>
       )}
 
+      {/* ── Conflict resolution ── */}
       {conflictModalOpen && (
         <Modal
           title="Name conflicts"
-          onClose={() => {
-            setConflictModalOpen(false);
-            setPendingRetry(null);
-          }}
+          onClose={() => { setConflictModalOpen(false); setPendingRetry(null); }}
         >
           <div className="modal__form">
             <p className="modal__hint">These items already exist in the destination. Choose what to do for each:</p>
@@ -1792,10 +1233,7 @@ export default function SpaceExplorer({
             <button
               type="button"
               className="modal__btn modal__btn--primary modal__btn--full"
-              onClick={() => {
-                setConflictModalOpen(false);
-                void pendingRetry?.(conflictResolutions);
-              }}
+              onClick={() => { setConflictModalOpen(false); void pendingRetry?.(conflictResolutions); }}
             >
               Continue
             </button>

@@ -10,8 +10,19 @@ import RequestRoleModal from '../components/SpaceView/RequestRoleModal';
 import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
 import SpaceFeed from '../components/SpaceView/SpaceFeed';
 import SpaceExplorer from '../components/SpaceView/SpaceExplorer';
+import SpaceTrash from '../components/SpaceView/SpaceTrash';
+import SpaceAbout from '../components/SpaceView/SpaceAbout';
 
 type ModalType = 'invite' | 'upload' | 'leave' | 'requestRole' | 'delete' | null;
+type TabType = 'feed' | 'explorer' | 'members' | 'trash' | 'about';
+
+const TABS: { key: TabType; label: string }[] = [
+  { key: 'feed', label: 'feed' },
+  { key: 'explorer', label: 'explorer' },
+  { key: 'members', label: 'members' },
+  { key: 'trash', label: 'trash' },
+  { key: 'about', label: 'ⓘ' },
+];
 
 export default function SpaceView() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +45,7 @@ export default function SpaceView() {
   } = useSpaceView({ id, token });
 
   const [openModal, setOpenModal] = useState<ModalType>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('feed');
   const [explorerRefresh, setExplorerRefresh] = useState(0);
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
 
@@ -55,44 +67,78 @@ export default function SpaceView() {
   const canUpload = ['admin', 'moderator', 'contributor'].includes(space.role);
 
   return (
-    <div>
-      <button onClick={() => void navigate('/spaces')}>← Back</button>
-      <h2>{space.spacename}</h2>
-      <p>Your role: {space.role}</p>
-
-      <div>
-        {canInvite && <button onClick={() => setOpenModal('invite')}>Invite</button>}
-        {canUpload && <button onClick={() => setOpenModal('upload')}>Upload</button>}
-        {canRequestRole && (
-          <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
-        )}
-        {space.role === 'admin' && (
-          <button onClick={() => setOpenModal('delete')}>Delete Space</button>
-        )}
-        <button onClick={() => setOpenModal('leave')}>Leave</button>
+    <div className="space-view">
+      <div className="space-view__top">
+        <button className="space-view__back" onClick={() => void navigate('/spaces')}>← Back</button>
+        <h2 className="space-view__title">{space.spacename}</h2>
       </div>
 
-      <SpaceFeed spaceId={space.id} token={token!} />
-      <SpaceExplorer
-        space={space}
-        token={token!}
-        role={space.role}
-        refreshTrigger={explorerRefresh}
-        onFolderChange={setCurrentFolderId}
-      />
+      <nav className="space-tabs" aria-label="Space sections">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`space-tab${activeTab === tab.key ? ' space-tab--active' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
-      <MembersList
-        members={members}
-        loading={membersLoading}
-        currentUserId={user?.id}
-        myRole={space.role}
-        onRoleChange={handleRoleChange}
-        onRemoveMember={handleRemoveMember}
-        roleUpdatingUserId={roleUpdatingUserId}
-        roleUpdateError={roleUpdateError}
-        removingUserId={removingUserId}
-        removeError={removeError}
-      />
+      <div className="space-view__content">
+        {activeTab === 'feed' && (
+          <SpaceFeed spaceId={space.id} token={token!} />
+        )}
+
+        {activeTab === 'explorer' && (
+          <SpaceExplorer
+            space={space}
+            token={token!}
+            role={space.role}
+            refreshTrigger={explorerRefresh}
+            onFolderChange={setCurrentFolderId}
+            onUpload={canUpload ? () => setOpenModal('upload') : undefined}
+          />
+        )}
+
+        {activeTab === 'members' && (
+          <div className="space-members-tab">
+            <div className="space-members-tab__actions">
+              {canInvite && (
+                <button onClick={() => setOpenModal('invite')}>Invite members</button>
+              )}
+              {canRequestRole && (
+                <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
+              )}
+            </div>
+            <MembersList
+              members={members}
+              loading={membersLoading}
+              currentUserId={user?.id}
+              myRole={space.role}
+              onRoleChange={handleRoleChange}
+              onRemoveMember={handleRemoveMember}
+              roleUpdatingUserId={roleUpdatingUserId}
+              roleUpdateError={roleUpdateError}
+              removingUserId={removingUserId}
+              removeError={removeError}
+            />
+          </div>
+        )}
+
+        {activeTab === 'trash' && (
+          <SpaceTrash space={space} token={token!} role={space.role} />
+        )}
+
+        {activeTab === 'about' && (
+          <SpaceAbout
+            space={space}
+            members={members}
+            onLeave={() => setOpenModal('leave')}
+            onDelete={space.role === 'admin' ? () => setOpenModal('delete') : undefined}
+          />
+        )}
+      </div>
 
       {openModal === 'invite' && (
         <InviteModal

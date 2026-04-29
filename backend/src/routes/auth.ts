@@ -1,14 +1,35 @@
-import { Router } from 'express';
+import { Router, RequestHandler } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { authenticate } from '../middleware';
 import { createUser, findUserByEmail, findUserById, findUserByUsernameOrEmail } from '../db';
-import { AUTH } from '../config';
+import { AUTH, RATE, DEBUG } from '../config';
 import { validateLoginBody, validateRegisterBody } from '../validation';
 
 const router = Router();
 
-router.post('/register', async (req, res) => {
+const loginLimiter: RequestHandler = DEBUG
+  ? (_req, _res, next) => next()
+  : rateLimit({
+      windowMs: RATE.LOGIN_WINDOW_MS,
+      limit: RATE.LOGIN_MAX,
+      message: { error: 'Too many login attempts, try again in 15 minutes' },
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+    });
+
+const registerLimiter: RequestHandler = DEBUG
+  ? (_req, _res, next) => next()
+  : rateLimit({
+      windowMs: RATE.REGISTER_WINDOW_MS,
+      limit: RATE.REGISTER_MAX,
+      message: { error: 'Too many registrations from this IP' },
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+    });
+
+router.post('/register', registerLimiter, async (req, res) => {
   const parsed = validateRegisterBody(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error });
@@ -34,7 +55,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const parsed = validateLoginBody(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error });
