@@ -224,7 +224,6 @@ export const uploadToSpace = ({
   axios.post(`${API}/spaces/${spaceId}/upload`, formData, {
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'multipart/form-data',
     },
   });
 

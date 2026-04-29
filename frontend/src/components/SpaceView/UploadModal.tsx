@@ -70,19 +70,19 @@ export default function UploadModal({ space, token, folderId, onClose, onUploadS
     try {
       setUploading(true);
 
-      const fileHashes = await Promise.all(files.map((file) => computeSha256Hex(file)));
+      const formData = new FormData();
+      files.forEach((file) => formData.append('items', file));
 
-      // hash-check + duplicate-skip removed intentionally:
-      // hashes are stored on the backend for future duplicate-detection features.
-
-      if (files.length > 0) {
-        const formData = new FormData();
-        files.forEach((file) => formData.append('items', file));
+      // crypto.subtle is only available in secure contexts (HTTPS / localhost).
+      // Skip hashing on plain HTTP — hashes are stored for future duplicate detection.
+      if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const fileHashes = await Promise.all(files.map((file) => computeSha256Hex(file)));
         formData.append('content_hashes', JSON.stringify(fileHashes));
-        if (folderId != null) formData.append('folder_id', String(folderId));
-        await uploadToSpace({ spaceId: space.id, formData, token });
-        onUploadSuccess?.();
       }
+
+      if (folderId != null) formData.append('folder_id', String(folderId));
+      await uploadToSpace({ spaceId: space.id, formData, token });
+      onUploadSuccess?.();
 
       setUploadSuccess(`Upload complete: ${files.length} item${files.length === 1 ? '' : 's'} uploaded.`);
       setFiles([]);

@@ -62,8 +62,14 @@ const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 const storage: StorageEngine = multer.diskStorage({
   destination: (req, _file, cb) => {
     const dest = path.join(UPLOADS_ROOT, 'spaces', String(req.params.spaceId), 'originals');
-    fs.mkdirSync(dest, { recursive: true });
-    cb(null, dest);
+    console.log('[Multer] Writing to:', dest);
+    try {
+      fs.mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    } catch (err) {
+      console.error('[Multer] mkdirSync failed:', err);
+      cb(err as Error, dest);
+    }
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();

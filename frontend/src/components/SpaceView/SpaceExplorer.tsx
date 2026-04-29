@@ -227,6 +227,7 @@ export default function SpaceExplorer({
       await Promise.all(folderIds.map((folderId) => deleteSpaceFolder({ spaceId: space.id, token, folderId })));
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
+      setSelectMode(false);
       await refreshItems();
       await refreshFolders();
     } catch (err: unknown) {
@@ -257,6 +258,7 @@ export default function SpaceExplorer({
       setBulkMoveOpen(false);
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
+      setSelectMode(false);
       await refreshItems();
       await refreshFolders();
     } catch (err: unknown) {
@@ -291,6 +293,9 @@ export default function SpaceExplorer({
       setBulkCopyLoading(true);
       await copyItems({ spaceId: space.id, token, itemIds: fileIds, folderId, resolutions });
       setBulkCopyOpen(false);
+      setSelectedItemIds(new Set());
+      setSelectedFolderIds(new Set());
+      setSelectMode(false);
       await refreshItems();
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
@@ -1469,7 +1474,7 @@ export default function SpaceExplorer({
               ✕
             </button>
             <AuthenticatedImage
-              src={selectedItem.thumbnailUrl}
+              src={itemThumbnailUrl(space.id, selectedItem.itemId)}
               token={token}
               alt={selectedItem.displayName}
               className="space-explorer__info-thumb"

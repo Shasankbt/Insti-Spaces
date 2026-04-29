@@ -231,6 +231,7 @@ const validateUploadedFileSignatures = async (
 };
 
 const handleUpload = async (req: Request, res: Response) => {
+  console.log("Handling upload for user", req.user.id, "with member role", req.member.role);
   if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
     return;

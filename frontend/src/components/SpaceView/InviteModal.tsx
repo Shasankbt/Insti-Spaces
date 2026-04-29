@@ -99,12 +99,28 @@ export default function InviteModal({
   };
 
   const handleCopy = () => {
-    if (!inviteLink) return;
+  if (!inviteLink) return;
+
+  if (navigator.clipboard?.writeText) {
     void navigator.clipboard.writeText(inviteLink).then(() => {
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2500);
     });
-  };
+  } else {
+    // Fallback for non-HTTPS / local IP access
+    const el = document.createElement('textarea');
+    el.value = inviteLink;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2500);
+  }
+};
 
   return (
     <Modal
