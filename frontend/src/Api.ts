@@ -11,7 +11,7 @@ const authHeaders = (token: string) => ({
 export const registerUser = (data: { username: string; email: string; password: string }) =>
   axios.post(`${API}/auth/register`, data);
 
-export const loginUser = (data: { email: string; password: string }) =>
+export const loginUser = (data: { username: string; password: string }) =>
   axios.post(`${API}/auth/login`, data);
 
 export const searchUsers = ({ prefix, token }: { prefix: string; token: string }) =>

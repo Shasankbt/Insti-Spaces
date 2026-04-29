@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { authenticate } from '../middleware';
-import { createUser, findUserByEmail, findUserById } from '../db';
+import { createUser, findUserByEmail, findUserById, findUserByUsernameOrEmail } from '../db';
 import { AUTH } from '../config';
 import { validateLoginBody, validateRegisterBody } from '../validation';
 
@@ -35,10 +35,10 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: parsed.error });
   }
 
-  const { email, password } = parsed.data;
+  const { username, password } = parsed.data;
 
   try {
-    const user = await findUserByEmail(email);
+    const user = await findUserByUsernameOrEmail(username);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const match = await bcrypt.compare(password, user.password_hash);

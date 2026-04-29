@@ -19,7 +19,7 @@ const passwordSchema = z
   .min(VALIDATION.PASSWORD_MIN, `password must be at least ${VALIDATION.PASSWORD_MIN} characters`)
   .max(VALIDATION.PASSWORD_MAX, `password must be at most ${VALIDATION.PASSWORD_MAX} characters`)
   .regex(/[A-Za-z]/, 'password must include at least one letter')
-  .regex(/\d/, 'password must include at least one number');
+  ;
 
 const registerBodySchema = z.object({
   username: usernameSchema,
@@ -28,7 +28,7 @@ const registerBodySchema = z.object({
 });
 
 const loginBodySchema = z.object({
-  email: emailSchema,
+  username: usernameSchema.or(emailSchema),
   password: z.string().min(1, 'password is required').max(VALIDATION.PASSWORD_MAX, `password must be at most ${VALIDATION.PASSWORD_MAX} characters`),
 });
 

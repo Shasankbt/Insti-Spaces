@@ -30,6 +30,15 @@ export const findUserByEmail = async (email: string): Promise<UserWithHash | nul
   return rows[0] ?? null;
 };
 
+export const findUserByUsernameOrEmail = async (identifier: string): Promise<UserWithHash | null> => {
+  const { rows } = await pool.query<UserWithHash>(
+    `SELECT id, username, email, password_hash, created_at FROM users
+     WHERE email = $1 OR username = $1`,
+    [identifier],
+  );
+  return rows[0] ?? null;
+};
+
 export const findUserByUsername = async (username: string): Promise<User | null> => {
   const { rows } = await pool.query<User>(
     `SELECT id, username, email, created_at FROM users WHERE username = $1`,

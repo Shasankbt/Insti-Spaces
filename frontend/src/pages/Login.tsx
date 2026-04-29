@@ -5,7 +5,7 @@ import { loginUser } from '../Api';
 import type { AuthUser } from '../types';
 
 export default function Login() {
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState<string | null>(null);
   const { login, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -51,7 +51,7 @@ export default function Login() {
       <h2>Login</h2>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <form onSubmit={(e) => void handleSubmit(e)}>
-        <input name="email" placeholder="Email" onChange={handleChange} />
+        <input name="username" placeholder="Email or username" onChange={handleChange} />
         <input name="password" type="password" placeholder="Password" onChange={handleChange} />
         <button type="submit">Login</button>
       </form>
