@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useRequireAuth from '../hooks/useRequireAuth';
 import useSpaceView from '../hooks/useSpaceView';
 import MembersList from '../components/SpaceView/MembersList';
@@ -34,9 +34,10 @@ const TABS: { key: TabType; label: string }[] = [
 ];
 
 export default function SpaceView() {
-  const { id } = useParams<{ id: string }>();
+  const { id, '*': folderPath = '' } = useParams<{ id: string; '*': string }>();
   const { user, token, loading, isAuthenticated } = useRequireAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     space,
@@ -54,12 +55,29 @@ export default function SpaceView() {
   } = useSpaceView({ id, token });
 
   const [openModal, setOpenModal] = useState<ModalType>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('feed');
   const [explorerRefresh, setExplorerRefresh] = useState(0);
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [resumableUpload, setResumableUpload] = useState<ResumableUploadSummary | null>(null);
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [resumeSignal, setResumeSignal] = useState(0);
+  const requestedTab = searchParams.get('tab');
+  const activeTab: TabType = TABS.some((tab) => tab.key === requestedTab)
+    ? (requestedTab as TabType)
+    : folderPath
+      ? 'explorer'
+      : 'feed';
+
+  const setActiveTab = (tab: TabType) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'feed') {
+        next.delete('tab');
+      } else {
+        next.set('tab', tab);
+      }
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -83,7 +101,7 @@ export default function SpaceView() {
   };
 
   return (
-    <div>
+    <div className="space-view">
       <button onClick={() => void navigate('/spaces')}>← Back</button>
       <h2>{space.spacename}</h2>
       <p>Your role: {space.role}</p>

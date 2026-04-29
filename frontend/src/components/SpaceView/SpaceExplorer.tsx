@@ -727,15 +727,15 @@ export default function SpaceExplorer({
       ...(currentFolder ? [encodeURIComponent(currentFolder.name)] : []),
       encodeURIComponent(folder.name),
     ];
-    navigate(`/spaces/${space.id}/${segments.join('/')}`);
+    navigate(`/spaces/${space.id}/${segments.join('/')}?tab=explorer`);
   };
 
   const navigateToBreadcrumb = (index: number) => {
     const segments = breadcrumbs.slice(0, index + 1).map((b) => encodeURIComponent(b.name));
-    navigate(`/spaces/${space.id}/${segments.join('/')}`);
+    navigate(`/spaces/${space.id}/${segments.join('/')}?tab=explorer`);
   };
 
-  const navigateToRoot = () => navigate(`/spaces/${space.id}`);
+  const navigateToRoot = () => navigate(`/spaces/${space.id}?tab=explorer`);
 
   const navigateBack = () => {
     if (!currentFolder) return;
