@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSpacePageView, likeSpaceItem } from '../../Api';
+import { POLL_INTERVAL } from '../../constants';
 import { itemFileUrl, itemThumbnailUrl } from '../../utils';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import type { SpacePhoto } from '../../types';
@@ -23,24 +24,38 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   const lastWheelNavAt = useRef(0);
   const lastTapAt = useRef(0);
   const lastVideoClickAt = useRef(0);
-  const likeRequestInFlight = useRef(false);
+  const likeRequestInFlight = useRef(new Set<string>());
   const likeBurstTimeoutRef = useRef<number | null>(null);
 
-  const fetchPhotos = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchPhotos = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const { data } = await getSpacePageView({ spaceId, token });
       setPhotos(data.photos ?? []);
     } catch {
-      setError('Failed to load feed photos');
+      if (!silent) {
+        setError('Failed to load feed photos');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [spaceId, token]);
 
   useEffect(() => {
     void fetchPhotos();
+  }, [fetchPhotos]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      void fetchPhotos({ silent: true });
+    }, POLL_INTERVAL);
+    return () => window.clearInterval(id);
   }, [fetchPhotos]);
 
   useEffect(() => {
@@ -154,21 +169,24 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
     });
   }, []);
 
-  const handleLikeCurrentItem = useCallback(async () => {
-    if (!activePhoto) {
+  const handleLikeItem = useCallback(async (photoId: string, showBurst = false) => {
+    const targetPhoto = photos.find((photo) => photo.photoId === photoId);
+    if (!targetPhoto) {
       return;
     }
 
-    showLikeBurst();
+    if (showBurst) {
+      showLikeBurst();
+    }
 
-    if (activePhoto.likedByMe || likeRequestInFlight.current) {
+    if (targetPhoto.likedByMe || likeRequestInFlight.current.has(photoId)) {
       return;
     }
 
-    likeRequestInFlight.current = true;
+    likeRequestInFlight.current.add(photoId);
     setPhotos((prev) =>
       prev.map((photo) =>
-        photo.photoId === activePhoto.photoId
+        photo.photoId === photoId
           ? {
               ...photo,
               likedByMe: true,
@@ -181,12 +199,12 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
     try {
       const { data } = await likeSpaceItem({
         spaceId,
-        itemId: activePhoto.photoId,
+        itemId: photoId,
         token,
       });
       setPhotos((prev) =>
         prev.map((photo) =>
-          photo.photoId === activePhoto.photoId
+          photo.photoId === photoId
             ? {
                 ...photo,
                 likeCount: data.likeCount,
@@ -198,7 +216,7 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
     } catch {
       setPhotos((prev) =>
         prev.map((photo) =>
-          photo.photoId === activePhoto.photoId
+          photo.photoId === photoId
             ? {
                 ...photo,
                 likeCount: Math.max(0, photo.likeCount - 1),
@@ -208,9 +226,17 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
         ),
       );
     } finally {
-      likeRequestInFlight.current = false;
+      likeRequestInFlight.current.delete(photoId);
     }
-  }, [activePhoto, showLikeBurst, spaceId, token]);
+  }, [photos, showLikeBurst, spaceId, token]);
+
+  const handleLikeCurrentItem = useCallback(async () => {
+    if (!activePhoto) {
+      return;
+    }
+
+    await handleLikeItem(activePhoto.photoId, true);
+  }, [activePhoto, handleLikeItem]);
 
   const handleMediaTouchEnd = useCallback(() => {
     if (!activePhoto) return;
@@ -259,21 +285,32 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
       {photos.length > 0 && (
         <div className="space-feed__grid">
           {photos.map((photo, index) => (
-            <button
-              key={photo.photoId}
-              type="button"
-              title={photo.displayName}
-              className="space-feed__link"
-              onClick={() => setActiveIndex(index)}
-            >
-              <AuthenticatedImage
-                src={itemThumbnailUrl(spaceId, photo.photoId)}
-                token={token}
-                alt={photo.displayName}
-                loading="lazy"
-                className="space-feed__thumb"
-              />
-            </button>
+            <div key={photo.photoId} className="space-feed__tile">
+              <button
+                type="button"
+                title={photo.displayName}
+                className="space-feed__link"
+                onClick={() => setActiveIndex(index)}
+              >
+                <AuthenticatedImage
+                  src={itemThumbnailUrl(spaceId, photo.photoId)}
+                  token={token}
+                  alt={photo.displayName}
+                  loading="lazy"
+                  className="space-feed__thumb"
+                />
+              </button>
+              <button
+                type="button"
+                aria-label={`${photo.likedByMe ? 'Liked' : 'Like'} ${photo.displayName}`}
+                className={`space-feed__thumb-like ${photo.likedByMe ? 'space-feed__thumb-like--active' : ''}`}
+                onClick={() => void handleLikeItem(photo.photoId)}
+                disabled={photo.likedByMe}
+              >
+                <span aria-hidden="true">♥</span>
+                <span>{photo.likeCount}</span>
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -359,6 +396,15 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
               <p className="space-feed__like-meta">
                 <span>{activePhoto.likeCount} like{activePhoto.likeCount === 1 ? '' : 's'}</span>
               </p>
+              <button
+                type="button"
+                className={`space-feed__lightbox-like ${activePhoto.likedByMe ? 'space-feed__lightbox-like--active' : ''}`}
+                onClick={() => void handleLikeCurrentItem()}
+                disabled={activePhoto.likedByMe}
+              >
+                <span aria-hidden="true">♥</span>
+                {activePhoto.likedByMe ? 'Liked' : 'Like'}
+              </button>
               <button
                 type="button"
                 className="space-feed__lightbox-view-full"

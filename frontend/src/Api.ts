@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ExplorerResponse, Role, SpaceItem, SpacePhoto } from './types';
+import type { ExplorerResponse, Role, SpaceItem, SpacePhoto, TrashedFolder } from './types';
 import { API_BASE as API } from './constants';
 
 const authHeaders = (token: string) => ({
@@ -168,6 +168,50 @@ export const createSpaceFolder = ({
     authHeaders(token),
   );
 
+export const moveSpaceFolder = ({
+  spaceId,
+  folderId,
+  parentId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  parentId: number | null;
+  token: string;
+}) =>
+  axios.patch(
+    `${API}/spaces/${spaceId}/folders/${folderId}/move`,
+    { parent_id: parentId },
+    authHeaders(token),
+  );
+
+export const deleteSpaceFolder = ({
+  spaceId,
+  folderId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  token: string;
+}) => axios.delete(`${API}/spaces/${spaceId}/folders/${folderId}`, authHeaders(token));
+
+export const copySpaceFolder = ({
+  spaceId,
+  folderId,
+  targetParentId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  targetParentId: number | null;
+  token: string;
+}) =>
+  axios.post<{ itemCount: number }>(
+    `${API}/spaces/${spaceId}/folders/${folderId}/copy`,
+    { targetParentId },
+    authHeaders(token),
+  );
+
 export const uploadToSpace = ({
   spaceId,
   formData,
@@ -324,6 +368,20 @@ export const likeSpaceItem = ({
     authHeaders(token),
   );
 
+export const unlikeSpaceItem = ({
+  spaceId,
+  itemId,
+  token,
+}: {
+  spaceId: number;
+  itemId: string;
+  token: string;
+}) =>
+  axios.delete<{ likeCount: number; likedByMe: boolean }>(
+    `${API}/spaces/${spaceId}/items/${itemId}/like`,
+    authHeaders(token),
+  );
+
 export const renameSpaceItem = ({
   spaceId,
   itemId,
@@ -353,10 +411,32 @@ export const getSpaceTrash = ({
   limit?: number;
   offset?: number;
 }) =>
-  axios.get<{ items: SpaceItem[]; hasMore: boolean }>(`${API}/spaces/${spaceId}/trash`, {
+  axios.get<{ items: SpaceItem[]; folders: TrashedFolder[]; hasMore: boolean }>(`${API}/spaces/${spaceId}/trash`, {
     params: { limit, offset },
     ...authHeaders(token),
   });
+
+export const restoreSpaceTrashFolder = ({
+  spaceId,
+  folderId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  token: string;
+}) =>
+  axios.post(`${API}/spaces/${spaceId}/folders/${folderId}/restore`, {}, authHeaders(token));
+
+export const permanentlyDeleteSpaceTrashFolder = ({
+  spaceId,
+  folderId,
+  token,
+}: {
+  spaceId: number;
+  folderId: number;
+  token: string;
+}) =>
+  axios.delete(`${API}/spaces/${spaceId}/folders/${folderId}/trash`, authHeaders(token));
 
 export const restoreSpaceTrashItem = ({
   spaceId,

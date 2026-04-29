@@ -109,8 +109,11 @@ CREATE TABLE space_folders (
 
     -- delta sync
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    deleted     BOOLEAN      NOT NULL DEFAULT FALSE
+    deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
+    trashed_at  TIMESTAMPTZ  DEFAULT NULL
 );
+
+ALTER TABLE space_folders ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ DEFAULT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_space_folders_space_parent
 ON space_folders (space_id, parent_id);
@@ -138,6 +141,7 @@ CREATE TABLE space_items (
     file_path          TEXT         NOT NULL,
     thumbnail_path     TEXT         NOT NULL,
     content_hash       TEXT,
+    perceptual_hash    CHAR(16),
     mime_type          TEXT         NOT NULL,
     size_bytes         BIGINT       NOT NULL,
 
@@ -154,11 +158,18 @@ CREATE TABLE space_items (
     deleted            BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
+ALTER TABLE IF EXISTS space_items
+ADD COLUMN IF NOT EXISTS perceptual_hash CHAR(16);
+
 CREATE INDEX IF NOT EXISTS idx_space_items_space_folder
 ON space_items (space_id, folder_id);
 
 CREATE INDEX IF NOT EXISTS idx_space_items_space_hash
 ON space_items (space_id, content_hash);
+
+CREATE INDEX IF NOT EXISTS idx_space_items_space_perceptual_hash
+ON space_items (space_id, perceptual_hash)
+WHERE deleted = false AND trashed_at IS NULL AND perceptual_hash IS NOT NULL;
 
 -- -------------------- space item likes -----------------------
 CREATE TABLE IF NOT EXISTS space_item_likes (

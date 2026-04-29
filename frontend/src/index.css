@@ -554,13 +554,17 @@ code {
 .space-feed__link {
   display: block;
   text-decoration: none;
-  margin-bottom: 0.75rem;
-  break-inside: avoid;
   border: none;
   background: transparent;
   padding: 0;
   cursor: zoom-in;
   width: 100%;
+}
+
+.space-feed__tile {
+  position: relative;
+  margin-bottom: 0.75rem;
+  break-inside: avoid;
 }
 
 .space-feed__thumb {
@@ -570,6 +574,43 @@ code {
   border-radius: 8px;
   border: 1px solid var(--border);
   display: block;
+}
+
+.space-feed__thumb-like {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  min-width: 42px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.68);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.space-feed__thumb-like:hover:not(:disabled),
+.space-feed__thumb-like:focus-visible {
+  background: rgba(17, 24, 39, 0.86);
+  border-color: rgba(255, 255, 255, 0.62);
+}
+
+.space-feed__thumb-like--active {
+  color: #fecdd3;
+}
+
+.space-feed__thumb-like:disabled {
+  cursor: default;
 }
 
 .space-feed__lightbox {
@@ -664,11 +705,45 @@ code {
 }
 
 .space-feed__like-meta {
-  margin-top: 8px;
-  margin-bottom: 0;
+  margin: 0;
   font-size: 14px;
   color: #fff;
-  text-align: center;
+}
+
+.space-feed__lightbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.space-feed__lightbox-like,
+.space-feed__lightbox-view-full {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.space-feed__lightbox-like--active {
+  color: #fecdd3;
+}
+
+.space-feed__lightbox-like:disabled {
+  cursor: default;
+}
+
+.space-feed__lightbox-view-full:hover,
+.space-feed__lightbox-like:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .space-feed__lightbox-hit {
@@ -1178,6 +1253,7 @@ code {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  width: 100%;
   aspect-ratio: 1;
   background: var(--code-bg, #1e293b);
   border: 1px solid var(--border, #334155);
@@ -1193,12 +1269,12 @@ code {
 }
 
 .space-explorer__folder-icon {
-  font-size: 2rem;
+  font-size: 2.8rem;
   line-height: 1;
 }
 
 .space-explorer__folder-name {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1257,6 +1333,44 @@ code {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.space-explorer__like-btn {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  min-width: 38px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.7);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 4;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.space-explorer__like-btn:hover:not(:disabled),
+.space-explorer__like-btn:focus-visible {
+  background: rgba(17, 24, 39, 0.88);
+  border-color: rgba(255, 255, 255, 0.62);
+}
+
+.space-explorer__like-btn--active {
+  color: #fecdd3;
+}
+
+.space-explorer__like-btn:disabled {
+  cursor: default;
 }
 
 /* Three-dots button — visible on hover */
@@ -1460,9 +1574,45 @@ code {
 }
 
 .space-explorer__lightbox-name {
-  margin-top: 8px;
+  margin: 0;
   font-size: 0.82rem;
   color: rgba(255,255,255,0.7);
+}
+
+.space-explorer__lightbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.space-explorer__lightbox-like,
+.space-explorer__lightbox-view-full {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.space-explorer__lightbox-like--active {
+  color: #fecdd3;
+}
+
+.space-explorer__lightbox-like:disabled {
+  cursor: default;
+}
+
+.space-explorer__lightbox-view-full:hover,
+.space-explorer__lightbox-like:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .space-explorer__lightbox-hit {

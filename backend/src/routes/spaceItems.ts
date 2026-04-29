@@ -21,6 +21,7 @@ import {
   emptySpaceTrash,
   isLikeableSpaceItemInSpace,
   likeSpaceItem,
+  unlikeSpaceItem,
   permanentlyDeleteTrashedSpaceItem,
   purgeExpiredSpaceTrash,
   renameSpaceItem,
@@ -32,6 +33,7 @@ import {
   getFolderById,
   getFolderSubtreeItems,
   getFolderSubtreePaths,
+  getTrashedFolders,
 } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
 import { validateContentHashes } from '../validation';
@@ -95,6 +97,32 @@ const generateVideoThumbnail = async ({
       .on('error', (err) => reject(err))
       .run();
   });
+
+const generateImagePerceptualHash = async (inputPath: string): Promise<string | null> => {
+  try {
+    const { data } = await sharp(inputPath)
+      .rotate()
+      .resize(8, 8, { fit: 'fill' })
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixels = [...data];
+    const average = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
+    let bits = '';
+    for (const value of pixels) {
+      bits += value >= average ? '1' : '0';
+    }
+
+    let hash = '';
+    for (let i = 0; i < bits.length; i += 4) {
+      hash += Number.parseInt(bits.slice(i, i + 4), 2).toString(16);
+    }
+    return hash;
+  } catch {
+    return null;
+  }
+};
 
 // Remux MP4 so the moov atom is at the front, enabling instant seeking via range requests.
 // Uses stream copy (no re-encode), so it's fast regardless of file size.
@@ -284,12 +312,14 @@ const handleUpload = async (req: Request, res: Response) => {
         const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
 
         const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
+        let perceptualHash: string | null = null;
         if (isVideoMime(file.mimetype)) {
           await generateVideoThumbnail({ inputPath: file.path, outputPath: thumbnailAbsPath });
           if (file.mimetype === 'video/mp4') {
             await applyMp4Faststart(file.path);
           }
         } else {
+          perceptualHash = await generateImagePerceptualHash(file.path);
           await sharp(file.path)
             .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: UPLOAD.THUMB_QUALITY })
@@ -303,6 +333,7 @@ const handleUpload = async (req: Request, res: Response) => {
           filePath,
           thumbnailPath,
           contentHash: contentHashes[fileIndex] ?? null,
+          perceptualHash,
           mimeType: file.mimetype,
           sizeBytes: file.size,
           displayName: displayNames[fileIndex],
@@ -409,8 +440,14 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
         }
       }
       const { rows, nextCursor } = await getItemsInFolderPage({ spaceId, folderId, limit, cursor });
+      const likeSummary = await getLikeSummaryForItems({
+        itemIds: rows.map((item) => item.photo_id),
+        userId: req.user.id,
+      });
       const items = rows.map((item) => ({
         ...toItemResponse(spaceId, item),
+        likeCount: likeSummary.get(item.photo_id)?.likeCount ?? 0,
+        likedByMe: likeSummary.get(item.photo_id)?.likedByMe ?? false,
         updated_at: item.updated_at,
         deleted: false,
       }));
@@ -418,8 +455,14 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
       res.json({ items, nextCursor: nc });
     } else {
       const rawItems = await getItemsInFolderSince({ spaceId, folderId, since: req.since });
+      const likeSummary = await getLikeSummaryForItems({
+        itemIds: rawItems.map((item) => item.photo_id),
+        userId: req.user.id,
+      });
       const items = rawItems.map((item) => ({
         ...toItemResponse(spaceId, item),
+        likeCount: likeSummary.get(item.photo_id)?.likeCount ?? 0,
+        likedByMe: likeSummary.get(item.photo_id)?.likedByMe ?? false,
         updated_at: item.updated_at,
         deleted: item.deleted || item.trashed_at != null,
       }));
@@ -553,8 +596,20 @@ router.get('/trash', authenticate, isMember, async (req, res) => {
 
   try {
     await purgeExpiredSpaceTrash({ spaceId });
-    const { rows, hasMore } = await getTrashedItems({ spaceId, limit, offset });
-    res.json({ items: rows.map((item) => toItemResponse(spaceId, item)), hasMore });
+    const [{ rows, hasMore }, folders] = await Promise.all([
+      getTrashedItems({ spaceId, limit, offset }),
+      getTrashedFolders({ spaceId }),
+    ]);
+    res.json({
+      items: rows.map((item) => toItemResponse(spaceId, item)),
+      folders: folders.map((f) => ({
+        folderId: f.id,
+        name: f.name,
+        trashedAt: f.trashed_at,
+        expiresAt: f.expires_at,
+      })),
+      hasMore,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });
@@ -563,8 +618,8 @@ router.get('/trash', authenticate, isMember, async (req, res) => {
 
 // POST /spaces/:spaceId/trash/:itemId/restore — restore an item to its original folder
 router.post('/trash/:itemId/restore', authenticate, isMember, async (req, res) => {
-  if (!canManageTrash(req.member.role)) {
-    res.status(403).json({ error: 'Only admins and moderators can restore trash' });
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can restore trash' });
     return;
   }
 
@@ -714,6 +769,34 @@ router.post('/items/:itemId/like', authenticate, isMember, async (req, res) => {
     }
 
     await likeSpaceItem({ itemId, userId: req.user.id });
+    const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
+    const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
+    res.json(likeInfo);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// DELETE /spaces/:spaceId/items/:itemId/like — unlike a media item
+router.delete('/items/:itemId/like', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const itemIdRaw = req.params.itemId;
+  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+
+  if (!spaceId || !itemId) {
+    res.status(400).json({ error: 'Invalid spaceId or itemId' });
+    return;
+  }
+
+  try {
+    const exists = await isLikeableSpaceItemInSpace({ itemId, spaceId });
+    if (!exists) {
+      res.status(404).json({ error: 'Item not found in this space' });
+      return;
+    }
+
+    await unlikeSpaceItem({ itemId, userId: req.user.id });
     const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
     const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
     res.json(likeInfo);

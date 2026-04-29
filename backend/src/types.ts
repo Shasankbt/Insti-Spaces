@@ -82,6 +82,7 @@ export interface SpaceFolder {
   parent_id: number | null;   // null = top-level folder in the space
   updated_at: Date;
   deleted: boolean;
+  trashed_at: Date | null;
 }
 
 export interface SpaceItem {
@@ -92,6 +93,7 @@ export interface SpaceItem {
   file_path: string;          // relative to UPLOADS_ROOT, e.g. spaces/42/originals/uuid.jpg
   thumbnail_path: string;
   content_hash: string | null;
+  perceptual_hash: string | null;
   mime_type: string;
   size_bytes: number;
   display_name: string;       // original filename shown to users

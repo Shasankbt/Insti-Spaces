@@ -9,6 +9,7 @@ export const addSpaceItem = async ({
   filePath,
   thumbnailPath,
   contentHash,
+  perceptualHash,
   mimeType,
   sizeBytes,
   displayName,
@@ -20,6 +21,7 @@ export const addSpaceItem = async ({
   filePath: string;
   thumbnailPath: string;
   contentHash?: string | null;
+  perceptualHash?: string | null;
   mimeType: string;
   sizeBytes: number;
   displayName: string;
@@ -27,12 +29,29 @@ export const addSpaceItem = async ({
 }): Promise<SpaceItem> => {
   const { rows } = await pool.query<SpaceItem>(
     `INSERT INTO space_items
-       (space_id, uploader_id, folder_id, file_path, thumbnail_path, content_hash, mime_type, size_bytes, display_name, captured_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (space_id, uploader_id, folder_id, file_path, thumbnail_path, content_hash, perceptual_hash, mime_type, size_bytes, display_name, captured_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
-    [spaceId, uploaderId, folderId, filePath, thumbnailPath, contentHash ?? null, mimeType, sizeBytes, displayName, capturedAt],
+    [
+      spaceId,
+      uploaderId,
+      folderId,
+      filePath,
+      thumbnailPath,
+      contentHash ?? null,
+      perceptualHash ?? null,
+      mimeType,
+      sizeBytes,
+      displayName,
+      capturedAt,
+    ],
   );
   return rows[0];
+};
+
+export type SpaceItemFeedCandidate = SpaceItem & {
+  feed_score: number;
+  like_count: number;
 };
 
 export const getDisplayNamesInFolder = async ({
@@ -85,21 +104,33 @@ export const getSpaceItemsForPageView = async ({
 }: {
   spaceId: number;
   limit?: number;
-}): Promise<SpaceItem[]> => {
+}): Promise<SpaceItemFeedCandidate[]> => {
   const values: Array<number> = [spaceId];
-  let query = `SELECT *
-               FROM space_items
-               WHERE space_id = $1
-                 AND deleted = false
-                 AND trashed_at IS NULL
-               ORDER BY uploaded_at DESC`;
+  let query = `WITH like_counts AS (
+                 SELECT space_item_id, COUNT(*)::int AS like_count
+                 FROM space_item_likes
+                 GROUP BY space_item_id
+               )
+               SELECT
+                 si.*,
+                 COALESCE(lc.like_count, 0)::int AS like_count,
+                 (
+                   COALESCE(lc.like_count, 0) * 10
+                   + GREATEST(0, 8 - (EXTRACT(EPOCH FROM (NOW() - si.uploaded_at)) / 86400.0))
+                 )::float AS feed_score
+               FROM space_items si
+               LEFT JOIN like_counts lc ON lc.space_item_id = si.photo_id
+               WHERE si.space_id = $1
+                 AND si.deleted = false
+                 AND si.trashed_at IS NULL
+               ORDER BY feed_score DESC, si.uploaded_at DESC, si.photo_id DESC`;
 
   if (typeof limit === 'number') {
     values.push(limit);
     query += ` LIMIT $2`;
   }
 
-  const { rows } = await pool.query<SpaceItem>(query, values);
+  const { rows } = await pool.query<SpaceItemFeedCandidate>(query, values);
   return rows;
 };
 
@@ -193,6 +224,24 @@ export const getTrashedItems = async ({
   );
   const hasMore = rows.length > cap;
   return { rows: hasMore ? rows.slice(0, cap) : rows, hasMore };
+};
+
+export const getItemsInFolder = async ({
+  spaceId,
+  folderId,
+}: {
+  spaceId: number;
+  folderId: number | null;
+}): Promise<SpaceItem[]> => {
+  const { rows } = await pool.query<SpaceItem>(
+    `SELECT * FROM space_items
+     WHERE space_id = $1
+       AND folder_id IS NOT DISTINCT FROM $2
+       AND deleted = false
+       AND trashed_at IS NULL`,
+    [spaceId, folderId],
+  );
+  return rows;
 };
 
 export const getItemsByIds = async ({
@@ -547,9 +596,29 @@ export const likeSpaceItem = async ({
   userId: number;
 }): Promise<void> => {
   await pool.query(
-    `INSERT INTO space_item_likes (space_item_id, user_id)
-     VALUES ($1, $2)
-     ON CONFLICT (space_item_id, user_id) DO NOTHING`,
+    `WITH inserted AS (
+       INSERT INTO space_item_likes (space_item_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (space_item_id, user_id) DO NOTHING
+       RETURNING space_item_id
+     )
+     UPDATE space_items si
+     SET updated_at = NOW()
+     FROM inserted
+     WHERE si.photo_id = inserted.space_item_id`,
+    [itemId, userId],
+  );
+};
+
+export const unlikeSpaceItem = async ({
+  itemId,
+  userId,
+}: {
+  itemId: string;
+  userId: number;
+}): Promise<void> => {
+  await pool.query(
+    `DELETE FROM space_item_likes WHERE space_item_id = $1 AND user_id = $2`,
     [itemId, userId],
   );
 };

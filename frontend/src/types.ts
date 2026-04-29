@@ -71,8 +71,17 @@ export interface SpaceItem {
   mimeType: string;
   sizeBytes: number;
   folderId: number | null;
+  likeCount?: number;
+  likedByMe?: boolean;
   trashedAt?: string | null;
   expiresAt?: string | null;
+}
+
+export interface TrashedFolder {
+  folderId: number;
+  name: string;
+  trashedAt: string;
+  expiresAt: string;
 }
 
 export interface ExplorerFolder {

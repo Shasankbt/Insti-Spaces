@@ -110,8 +110,8 @@ const planConflicts = async ({
 
 // POST /spaces/:spaceId/item-action/trash — move items to trash (moderator+)
 router.post('/item-action/trash', authenticate, isMember, async (req, res) => {
-  if (!canManageTrash(req.member.role)) {
-    res.status(403).json({ error: 'Only admins and moderators can move items to trash' });
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can move items to trash' });
     return;
   }
 
@@ -309,6 +309,7 @@ router.post('/item-action/copy', authenticate, isMember, async (req, res) => {
           filePath: newFilePath,
           thumbnailPath: newThumbPath,
           contentHash: null,
+          perceptualHash: src.perceptual_hash,
           mimeType: src.mime_type,
           sizeBytes: src.size_bytes,
           displayName: resolvedName,
