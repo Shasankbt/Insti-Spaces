@@ -14,14 +14,23 @@ import SpaceTrash from '../components/SpaceView/SpaceTrash';
 import SpaceAbout from '../components/SpaceView/SpaceAbout';
 
 type ModalType = 'invite' | 'upload' | 'leave' | 'requestRole' | 'delete' | null;
+
+interface ResumableUploadSummary {
+  sessionId: string;
+  uploadedCount: number;
+  totalCount: number;
+  pendingCount: number;
+  message: string;
+}
+
 type TabType = 'feed' | 'explorer' | 'members' | 'trash' | 'about';
 
 const TABS: { key: TabType; label: string }[] = [
-  { key: 'feed', label: 'feed' },
-  { key: 'explorer', label: 'explorer' },
-  { key: 'members', label: 'members' },
-  { key: 'trash', label: 'trash' },
-  { key: 'about', label: 'ⓘ' },
+  { key: 'feed', label: 'Feed' },
+  { key: 'explorer', label: 'Explorer' },
+  { key: 'members', label: 'Members' },
+  { key: 'trash', label: 'Trash' },
+  { key: 'about', label: 'About' },
 ];
 
 export default function SpaceView() {
@@ -48,6 +57,9 @@ export default function SpaceView() {
   const [activeTab, setActiveTab] = useState<TabType>('feed');
   const [explorerRefresh, setExplorerRefresh] = useState(0);
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+  const [resumableUpload, setResumableUpload] = useState<ResumableUploadSummary | null>(null);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
+  const [resumeSignal, setResumeSignal] = useState(0);
 
   useEffect(() => {
     if (loading) return;
@@ -65,12 +77,43 @@ export default function SpaceView() {
   const canInvite = ['admin', 'moderator'].includes(space.role);
   const canRequestRole = ['viewer', 'contributor'].includes(space.role);
   const canUpload = ['admin', 'moderator', 'contributor'].includes(space.role);
+  const handleResumeUpload = () => {
+    setOpenModal('upload');
+    setResumeSignal((count) => count + 1);
+  };
 
   return (
-    <div className="space-view">
-      <div className="space-view__top">
-        <button className="space-view__back" onClick={() => void navigate('/spaces')}>← Back</button>
-        <h2 className="space-view__title">{space.spacename}</h2>
+    <div>
+      <button onClick={() => void navigate('/spaces')}>← Back</button>
+      <h2>{space.spacename}</h2>
+      <p>Your role: {space.role}</p>
+
+      {resumableUpload && (
+        <div className="space-view__upload-resume-banner">
+          <div>
+            <p className="space-view__upload-resume-title">Upload paused</p>
+            <p className="space-view__upload-resume-copy">{resumableUpload.message}</p>
+          </div>
+          <button
+            type="button"
+            className="space-view__upload-resume-btn"
+              onClick={() => handleResumeUpload()}
+          >
+            Resume upload
+          </button>
+        </div>
+      )}
+
+      <div>
+        {canInvite && <button onClick={() => setOpenModal('invite')}>Invite</button>}
+        {canUpload && <button onClick={() => setOpenModal('upload')}>Upload</button>}
+        {canRequestRole && (
+          <button onClick={() => setOpenModal('requestRole')}>Request role upgrade</button>
+        )}
+        {space.role === 'admin' && (
+          <button onClick={() => setOpenModal('delete')}>Delete Space</button>
+        )}
+        <button onClick={() => setOpenModal('leave')}>Leave</button>
       </div>
 
       <nav className="space-tabs" aria-label="Space sections">
@@ -154,8 +197,14 @@ export default function SpaceView() {
           space={space}
           token={token!}
           folderId={currentFolderId}
-          onClose={() => setOpenModal(null)}
-          onUploadSuccess={() => setExplorerRefresh((n) => n + 1)}
+          initialFiles={pendingUploadFiles}
+          onClose={() => {
+            setOpenModal(null);
+          }}
+          onItemsCommitted={() => setExplorerRefresh((n) => n + 1)}
+          onResumableUploadChange={setResumableUpload}
+          onPendingFilesChange={setPendingUploadFiles}
+          resumeSignal={resumeSignal}
         />
       )}
       {openModal === 'leave' && (

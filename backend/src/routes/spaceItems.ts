@@ -1,6 +1,7 @@
-import { Router, type Request, type Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
+import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
@@ -49,9 +50,91 @@ if (ffmpegStatic) {
 }
 
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
+const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
 const isMediaMime = (mimeType: string): boolean => mimeType.startsWith('image/') || mimeType.startsWith('video/');
 const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
 const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
+const VIDEO_CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+
+const shouldSimulateImageUploadInterruption = (files: Express.Multer.File[]): boolean =>
+  files.length >= 10 && files.every((file) => isImageMime(file.mimetype));
+
+type VideoUploadSession = {
+  sessionId: string;
+  spaceId: number;
+  uploaderId: number;
+  folderId: number | null;
+  displayName: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentHash: string | null;
+  totalChunks: number;
+  nextChunkIndex: number;
+  tempDir: string;
+  createdAt: number;
+};
+
+const videoUploadSessions = new Map<string, VideoUploadSession>();
+
+const getVideoSessionTempDir = (spaceId: number, sessionId: string): string =>
+  path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'video-sessions', sessionId);
+
+const getVideoStorageFilename = (sessionId: string, originalName: string): string => {
+  const ext = path.extname(originalName).toLowerCase() || '.mp4';
+  return `${sessionId}${ext}`;
+};
+
+const createVideoUploadSession = async ({
+  spaceId,
+  uploaderId,
+  folderId,
+  displayName,
+  originalName,
+  mimeType,
+  sizeBytes,
+  contentHash,
+}: {
+  spaceId: number;
+  uploaderId: number;
+  folderId: number | null;
+  displayName: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentHash: string | null;
+}): Promise<VideoUploadSession> => {
+  const sessionId = randomUUID();
+  const totalChunks = Math.max(1, Math.ceil(sizeBytes / VIDEO_CHUNK_SIZE_BYTES));
+  const tempDir = getVideoSessionTempDir(spaceId, sessionId);
+
+  await fs.mkdir(tempDir, { recursive: true });
+
+  const session: VideoUploadSession = {
+    sessionId,
+    spaceId,
+    uploaderId,
+    folderId,
+    displayName,
+    originalName,
+    mimeType,
+    sizeBytes,
+    contentHash,
+    totalChunks,
+    nextChunkIndex: 0,
+    tempDir,
+    createdAt: Date.now(),
+  };
+
+  videoUploadSessions.set(sessionId, session);
+  return session;
+};
+
+const getVideoUploadSession = (sessionId: string): VideoUploadSession | null =>
+  videoUploadSessions.get(sessionId) ?? null;
+
+const getVideoChunkPath = (session: VideoUploadSession, chunkIndex: number): string =>
+  path.join(session.tempDir, `chunk-${String(chunkIndex).padStart(6, '0')}.part`);
 
 const uploadLimiter = rateLimit({
   windowMs: RATE.UPLOAD_WINDOW_MS,
@@ -181,6 +264,152 @@ const uniqueDisplayName = (original: string, taken: Set<string>): string => {
   return `${base}(${n})${ext}`;
 };
 
+const commitStoredMediaFile = async ({
+  inputPath,
+  storageFilename,
+  spaceId,
+  folderId,
+  displayName,
+  contentHash,
+  uploaderId,
+  sizeBytes,
+  mimeType,
+}: {
+  inputPath: string;
+  storageFilename: string;
+  spaceId: number;
+  folderId: number | null;
+  displayName: string;
+  contentHash: string | null;
+  uploaderId: number;
+  sizeBytes: number;
+  mimeType: string;
+}) => {
+  const uploadsRoot = path.resolve(UPLOADS_ROOT);
+  const originalsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'originals');
+  const thumbnailDirAbs = path.join(uploadsRoot, 'spaces', String(spaceId), 'thumbnails');
+  await fs.mkdir(originalsDir, { recursive: true });
+  await fs.mkdir(thumbnailDirAbs, { recursive: true });
+
+  const finalOriginalAbsPath = path.join(originalsDir, storageFilename);
+  if (path.resolve(inputPath) !== finalOriginalAbsPath) {
+    try {
+      await fs.rename(inputPath, finalOriginalAbsPath);
+    } catch {
+      await fs.copyFile(inputPath, finalOriginalAbsPath);
+      await fs.unlink(inputPath);
+    }
+  }
+
+  const filePath = path.join('spaces', String(spaceId), 'originals', storageFilename);
+  const thumbnailExt = isVideoMime(mimeType) ? '.jpg' : '.webp';
+  const thumbnailFilename = `${path.parse(storageFilename).name}${thumbnailExt}`;
+  const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
+
+  const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
+  let perceptualHash: string | null = null;
+  if (isVideoMime(mimeType)) {
+    await generateVideoThumbnail({ inputPath: finalOriginalAbsPath, outputPath: thumbnailAbsPath });
+    if (mimeType === 'video/mp4') {
+      await applyMp4Faststart(finalOriginalAbsPath);
+    }
+  } else {
+    perceptualHash = await generateImagePerceptualHash(finalOriginalAbsPath);
+    await sharp(finalOriginalAbsPath)
+      .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: UPLOAD.THUMB_QUALITY })
+      .toFile(thumbnailAbsPath);
+  }
+
+  return addSpaceItem({
+    spaceId,
+    uploaderId,
+    folderId,
+    filePath,
+    thumbnailPath,
+    contentHash,
+    perceptualHash,
+    mimeType,
+    sizeBytes,
+    displayName,
+    capturedAt: null,
+  });
+};
+
+const commitUploadedMediaFile = async ({
+  file,
+  spaceId,
+  folderId,
+  displayName,
+  contentHash,
+  uploaderId,
+}: {
+  file: Express.Multer.File;
+  spaceId: number;
+  folderId: number | null;
+  displayName: string;
+  contentHash: string | null;
+  uploaderId: number;
+}) =>
+  commitStoredMediaFile({
+    inputPath: file.path,
+    storageFilename: file.filename,
+    spaceId,
+    folderId,
+    displayName,
+    contentHash,
+    uploaderId,
+    sizeBytes: file.size,
+    mimeType: file.mimetype,
+  });
+
+const parseVideoChunkIndex = (value: unknown): number | null => {
+  const parsed = typeof value === 'string' ? Number(value) : Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const finalizeVideoUploadSession = async (session: VideoUploadSession) => {
+  const storageFilename = getVideoStorageFilename(session.sessionId, session.originalName);
+  const finalChunkPath = path.join(session.tempDir, 'assembled.tmp');
+  const chunkPaths: string[] = [];
+
+  for (let i = 0; i < session.totalChunks; i++) {
+    const chunkPath = getVideoChunkPath(session, i);
+    const chunk = await fs.readFile(chunkPath);
+    chunkPaths.push(chunkPath);
+    await fs.appendFile(finalChunkPath, chunk);
+  }
+
+  for (const chunkPath of chunkPaths) {
+    try {
+      await fs.unlink(chunkPath);
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  const item = await commitStoredMediaFile({
+    inputPath: finalChunkPath,
+    storageFilename,
+    spaceId: session.spaceId,
+    folderId: session.folderId,
+    displayName: session.displayName,
+    contentHash: session.contentHash,
+    uploaderId: session.uploaderId,
+    sizeBytes: session.sizeBytes,
+    mimeType: session.mimeType,
+  });
+
+  videoUploadSessions.delete(session.sessionId);
+  try {
+    await fs.rm(session.tempDir, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup failures
+  }
+
+  return item;
+};
+
 const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
   await Promise.all(
     files.map(async (file) => {
@@ -296,10 +525,10 @@ const handleUpload = async (req: Request, res: Response) => {
     }
   }
 
-  try {
-    const thumbnailDirAbs = path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'thumbnails');
-    await fs.mkdir(thumbnailDirAbs, { recursive: true });
+  const uploadSessionId = randomUUID();
+  const simulateInterrupt = shouldSimulateImageUploadInterruption(files);
 
+  try {
     const existingNames = await getDisplayNamesInFolder({ spaceId, folderId });
     const takenNames = new Set(existingNames);
     const displayNames = files.map((file) => {
@@ -308,44 +537,46 @@ const handleUpload = async (req: Request, res: Response) => {
       return name;
     });
 
+    if (simulateInterrupt) {
+      const uploadedCount = 5;
+      const pendingFiles = files.slice(uploadedCount);
+
+      for (let i = 0; i < uploadedCount; i++) {
+        await commitUploadedMediaFile({
+          file: files[i],
+          spaceId,
+          folderId,
+          displayName: displayNames[i],
+          contentHash: contentHashes[i] ?? null,
+          uploaderId: req.user.id,
+        });
+      }
+
+      await cleanupUploadedFiles(pendingFiles);
+      res.status(409).json({
+        recoverable: true,
+        error: `Upload paused after ${uploadedCount} images. Click resume to upload the remaining ${pendingFiles.length}.`,
+        uploadSessionId,
+        uploadedCount,
+        totalCount: files.length,
+        pendingCount: pendingFiles.length,
+      });
+      return;
+    }
+
     const items = await Promise.all(
       files.map(async (file, fileIndex) => {
-        const filePath = path.join('spaces', String(spaceId), 'originals', file.filename);
-        const thumbnailExt = isVideoMime(file.mimetype) ? '.jpg' : '.webp';
-        const thumbnailFilename = `${path.parse(file.filename).name}${thumbnailExt}`;
-        const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
-
-        const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
-        let perceptualHash: string | null = null;
-        if (isVideoMime(file.mimetype)) {
-          await generateVideoThumbnail({ inputPath: file.path, outputPath: thumbnailAbsPath });
-          if (file.mimetype === 'video/mp4') {
-            await applyMp4Faststart(file.path);
-          }
-        } else {
-          perceptualHash = await generateImagePerceptualHash(file.path);
-          await sharp(file.path)
-            .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: UPLOAD.THUMB_QUALITY })
-            .toFile(thumbnailAbsPath);
-        }
-
-        return addSpaceItem({
+        return commitUploadedMediaFile({
+          file,
           spaceId,
-          uploaderId: req.user.id,
           folderId,
-          filePath,
-          thumbnailPath,
-          contentHash: contentHashes[fileIndex] ?? null,
-          perceptualHash,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
           displayName: displayNames[fileIndex],
-          capturedAt: null,
+          contentHash: contentHashes[fileIndex] ?? null,
+          uploaderId: req.user.id,
         });
       }),
     );
-    res.status(201).json({ items });
+    res.status(201).json({ items, uploadSessionId, uploadedCount: items.length, totalCount: files.length });
   } catch (err: unknown) {
     await cleanupUploadedFiles(files);
     const message = err instanceof Error ? err.message : 'Internal server error';
@@ -559,6 +790,136 @@ router.get('/items/:itemId/thumbnail', (req, res, next) => {
 
 // POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
 router.post('/upload', authenticate, isMember, uploadLimiter, upload.array('items', UPLOAD.MAX_FILES), handleUpload);
+
+router.post('/video-sessions', authenticate, isMember, uploadLimiter, express.json(), async (req, res) => {
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
+    return;
+  }
+
+  const body = req.body as {
+    displayName?: string;
+    originalName?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    contentHash?: string | null;
+    folderId?: number | null;
+  };
+
+  if (!body.displayName || !body.originalName || !body.mimeType || !Number.isFinite(Number(body.sizeBytes))) {
+    res.status(400).json({ error: 'Invalid video session payload' });
+    return;
+  }
+
+  const spaceId = req.member.spaceid;
+  const folderId = body.folderId ?? null;
+  if (folderId != null) {
+    const folder = await getFolderById(folderId);
+    if (!folder || folder.space_id !== spaceId || folder.deleted) {
+      res.status(404).json({ error: 'Folder not found in this space' });
+      return;
+    }
+  }
+
+  const session = await createVideoUploadSession({
+    spaceId,
+    uploaderId: req.user.id,
+    folderId,
+    displayName: body.displayName,
+    originalName: body.originalName,
+    mimeType: body.mimeType,
+    sizeBytes: Number(body.sizeBytes),
+    contentHash: body.contentHash ?? null,
+  });
+
+  res.status(201).json({
+    sessionId: session.sessionId,
+    nextChunkIndex: session.nextChunkIndex,
+    totalChunks: session.totalChunks,
+    chunkSizeBytes: VIDEO_CHUNK_SIZE_BYTES,
+  });
+});
+
+router.post(
+  '/video-sessions/:sessionId/chunks',
+  authenticate,
+  isMember,
+  uploadLimiter,
+  express.raw({ type: 'application/octet-stream', limit: `${VIDEO_CHUNK_SIZE_BYTES + 1024 * 1024}b` }),
+  async (req, res) => {
+    if (!canWrite(req.member.role)) {
+      res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
+      return;
+    }
+
+    const session = getVideoUploadSession(String(req.params.sessionId));
+    if (!session || session.spaceId !== req.member.spaceid) {
+      res.status(404).json({ error: 'Video upload session not found' });
+      return;
+    }
+
+    const chunkIndex = parseVideoChunkIndex(req.header('x-chunk-index'));
+    if (chunkIndex == null) {
+      res.status(400).json({ error: 'Invalid chunk index' });
+      return;
+    }
+
+    if (chunkIndex !== session.nextChunkIndex) {
+      res.status(409).json({
+        error: 'Resume from the next missing chunk',
+        nextChunkIndex: session.nextChunkIndex,
+        totalChunks: session.totalChunks,
+      });
+      return;
+    }
+
+    const chunk = req.body as Buffer | undefined;
+    if (!chunk || chunk.length === 0) {
+      res.status(400).json({ error: 'Empty chunk payload' });
+      return;
+    }
+
+    await fs.writeFile(getVideoChunkPath(session, chunkIndex), chunk);
+    session.nextChunkIndex += 1;
+
+    res.status(200).json({
+      sessionId: session.sessionId,
+      nextChunkIndex: session.nextChunkIndex,
+      totalChunks: session.totalChunks,
+      complete: session.nextChunkIndex >= session.totalChunks,
+    });
+  },
+);
+
+router.post('/video-sessions/:sessionId/complete', authenticate, isMember, uploadLimiter, express.json(), async (req, res) => {
+  if (!canWrite(req.member.role)) {
+    res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
+    return;
+  }
+
+  const session = getVideoUploadSession(String(req.params.sessionId));
+  if (!session || session.spaceId !== req.member.spaceid) {
+    res.status(404).json({ error: 'Video upload session not found' });
+    return;
+  }
+
+  if (session.nextChunkIndex < session.totalChunks) {
+    res.status(409).json({
+      error: 'Upload incomplete',
+      nextChunkIndex: session.nextChunkIndex,
+      totalChunks: session.totalChunks,
+    });
+    return;
+  }
+
+  try {
+    const item = await finalizeVideoUploadSession(session);
+    res.status(201).json({ item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
 
 // POST /spaces/:spaceId/items/hash-check — return already-existing content hashes in this space
 router.post('/items/hash-check', authenticate, isMember, async (req, res) => {

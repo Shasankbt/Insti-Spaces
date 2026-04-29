@@ -221,11 +221,156 @@ export const uploadToSpace = ({
   formData: FormData;
   token: string;
 }) =>
-  axios.post(`${API}/spaces/${spaceId}/upload`, formData, {
+  axios.post<{
+    recoverable?: boolean;
+    error?: string;
+    uploadSessionId?: string;
+    uploadedCount?: number;
+    totalCount?: number;
+    pendingCount?: number;
+  }>(`${API}/spaces/${spaceId}/upload`, formData, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+    validateStatus: (status) => status < 500,
   });
+
+export const createVideoUploadSession = ({
+  spaceId,
+  displayName,
+  originalName,
+  mimeType,
+  sizeBytes,
+  folderId,
+  contentHash,
+  token,
+}: {
+  spaceId: number;
+  displayName: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  folderId?: number | null;
+  contentHash?: string | null;
+  token: string;
+}) =>
+  axios.post<{ sessionId: string; nextChunkIndex: number; totalChunks: number; chunkSizeBytes: number }>(
+    `${API}/spaces/${spaceId}/video-sessions`,
+    {
+      displayName,
+      originalName,
+      mimeType,
+      sizeBytes,
+      folderId: folderId ?? null,
+      contentHash: contentHash ?? null,
+    },
+    authHeaders(token),
+  );
+
+export const uploadVideoChunk = ({
+  spaceId,
+  sessionId,
+  chunkIndex,
+  chunk,
+  token,
+}: {
+  spaceId: number;
+  sessionId: string;
+  chunkIndex: number;
+  chunk: Blob;
+  token: string;
+}) =>
+  axios.post<{
+    sessionId: string;
+    nextChunkIndex: number;
+    totalChunks: number;
+    complete: boolean;
+    error?: string;
+  }>(
+    `${API}/spaces/${spaceId}/video-sessions/${sessionId}/chunks`,
+    chunk,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+        'x-chunk-index': String(chunkIndex),
+      },
+      validateStatus: (status) => status < 500,
+    },
+  );
+
+export const completeVideoUploadSession = ({
+  spaceId,
+  sessionId,
+  token,
+}: {
+  spaceId: number;
+  sessionId: string;
+  token: string;
+}) =>
+  axios.post<{ item: SpaceItem }>(
+    `${API}/spaces/${spaceId}/video-sessions/${sessionId}/complete`,
+    {},
+    authHeaders(token),
+  );
+
+export const uploadVideoFile = async ({
+  spaceId,
+  file,
+  token,
+  folderId,
+  contentHash,
+  chunkSizeBytes = 8 * 1024 * 1024,
+}: {
+  spaceId: number;
+  file: File;
+  token: string;
+  folderId?: number | null;
+  contentHash?: string | null;
+  chunkSizeBytes?: number;
+}): Promise<SpaceItem> => {
+  const sessionResponse = await createVideoUploadSession({
+    spaceId,
+    displayName: file.name,
+    originalName: file.name,
+    mimeType: file.type || 'video/mp4',
+    sizeBytes: file.size,
+    folderId,
+    contentHash,
+    token,
+  });
+
+  let nextChunkIndex = sessionResponse.data.nextChunkIndex;
+  const totalChunks = sessionResponse.data.totalChunks;
+  const sessionId = sessionResponse.data.sessionId;
+
+  while (nextChunkIndex < totalChunks) {
+    const start = nextChunkIndex * chunkSizeBytes;
+    const end = Math.min(file.size, start + chunkSizeBytes);
+    const chunk = file.slice(start, end);
+    const response = await uploadVideoChunk({
+      spaceId,
+      sessionId,
+      chunkIndex: nextChunkIndex,
+      chunk,
+      token,
+    });
+
+    if (response.status === 409) {
+      nextChunkIndex = response.data.nextChunkIndex;
+      continue;
+    }
+
+    if (response.status >= 400) {
+      throw new Error(response.data.error ?? 'Video chunk upload failed');
+    }
+
+    nextChunkIndex = response.data.nextChunkIndex;
+  }
+
+  const completeResponse = await completeVideoUploadSession({ spaceId, sessionId, token });
+  return completeResponse.data.item;
+};
 
 export const checkSpaceItemHashes = ({
   spaceId,

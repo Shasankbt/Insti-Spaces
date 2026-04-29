@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
-import { uploadToSpace } from '../../Api';
+import { uploadToSpace, uploadVideoFile } from '../../Api';
 import type { Space } from '../../types';
 
 interface MediaPreview {
@@ -8,13 +8,26 @@ interface MediaPreview {
   kind: 'image' | 'video';
 }
 
+interface ResumableUploadSummary {
+  sessionId: string;
+  uploadedCount: number;
+  totalCount: number;
+  pendingCount: number;
+  message: string;
+}
+
 interface UploadModalProps {
   space: Space;
   token: string;
   folderId?: number | null;
+  initialFiles?: File[];
   onClose: () => void;
-  onUploadSuccess?: () => void;
+  onItemsCommitted?: () => void;
+  onResumableUploadChange?: (summary: ResumableUploadSummary | null) => void;
+  onPendingFilesChange?: (files: File[]) => void;
+  resumeSignal?: number;
 }
+
 const computeSha256Hex = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer();
   const digest = await crypto.subtle.digest('SHA-256', buffer);
@@ -23,77 +36,165 @@ const computeSha256Hex = async (file: File): Promise<string> => {
     .join('');
 };
 
-export default function UploadModal({ space, token, folderId, onClose, onUploadSuccess }: UploadModalProps) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<MediaPreview[]>([]);
+const buildPreviews = (files: File[]): MediaPreview[] =>
+  files.map((file) => ({
+    url: URL.createObjectURL(file),
+    kind: file.type.startsWith('video/') ? 'video' : 'image',
+  }));
+
+const revokePreviews = (previews: MediaPreview[]): void => {
+  previews.forEach((preview) => URL.revokeObjectURL(preview.url));
+};
+
+export default function UploadModal({
+  space,
+  token,
+  folderId,
+  initialFiles,
+  onClose,
+  onItemsCommitted,
+  onResumableUploadChange,
+  onPendingFilesChange,
+  resumeSignal,
+}: UploadModalProps) {
+  const [files, setFiles] = useState<File[]>(initialFiles ?? []);
+  const [previews, setPreviews] = useState<MediaPreview[]>(() => buildPreviews(initialFiles ?? []));
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [resumeReady, setResumeReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const previewUrlsRef = useRef<MediaPreview[]>([]);
+  const lastResumeSignalRef = useRef<number>(resumeSignal ?? 0);
+
+  useEffect(() => {
+    if (!initialFiles || initialFiles.length === 0) return;
+    setSelection(initialFiles);
+  }, [initialFiles]);
 
   useEffect(
     () => () => {
-      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
+      revokePreviews(previewUrlsRef.current);
     },
-    [previews],
+    [],
   );
+
+  useEffect(() => {
+    if (!resumeReady) return;
+    const currentSignal = resumeSignal ?? 0;
+    if (currentSignal === lastResumeSignalRef.current) return;
+    lastResumeSignalRef.current = currentSignal;
+    void submitFiles(files);
+  }, [files, resumeReady, resumeSignal]);
+
+  const setSelection = (nextFiles: File[]) => {
+    revokePreviews(previewUrlsRef.current);
+    const nextPreviews = buildPreviews(nextFiles);
+    previewUrlsRef.current = nextPreviews;
+    setFiles(nextFiles);
+    setPreviews(nextPreviews);
+    onPendingFilesChange?.(nextFiles);
+  };
+
+  const clearResumableState = () => {
+    setResumeReady(false);
+    onResumableUploadChange?.(null);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files ?? []);
-    previews.forEach((preview) => URL.revokeObjectURL(preview.url));
-    setFiles(selected);
-    setPreviews(
-      selected.map((file) => ({
-        url: URL.createObjectURL(file),
-        kind: file.type.startsWith('video/') ? 'video' : 'image',
-      })),
-    );
+    setSelection(selected);
+    clearResumableState();
     setUploadError(null);
     setUploadSuccess(null);
   };
 
   const handleRemove = (index: number) => {
-    setFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
-    setPreviews((prev) => {
-      const removed = prev[index];
-      if (removed) URL.revokeObjectURL(removed.url);
-      return prev.filter((_, currentIndex) => currentIndex !== index);
-    });
+    const nextFiles = files.filter((_, currentIndex) => currentIndex !== index);
+    setSelection(nextFiles);
+    clearResumableState();
+    setUploadError(null);
+    setUploadSuccess(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!files.length) return;
+  const submitFiles = async (filesToUpload: File[]) => {
+    if (filesToUpload.length === 0) return;
 
     setUploadError(null);
     setUploadSuccess(null);
     try {
       setUploading(true);
 
-      const formData = new FormData();
-      files.forEach((file) => formData.append('items', file));
+      const videoFiles = filesToUpload.filter((file) => file.type.startsWith('video/'));
+      const imageFiles = filesToUpload.filter((file) => !file.type.startsWith('video/'));
 
-      // crypto.subtle is only available in secure contexts (HTTPS / localhost).
-      // Skip hashing on plain HTTP — hashes are stored for future duplicate detection.
-      if (typeof crypto !== 'undefined' && crypto.subtle) {
-        const fileHashes = await Promise.all(files.map((file) => computeSha256Hex(file)));
-        formData.append('content_hashes', JSON.stringify(fileHashes));
+      if (imageFiles.length > 0) {
+        const formData = new FormData();
+        imageFiles.forEach((file) => formData.append('items', file));
+
+        // crypto.subtle is only available in secure contexts (HTTPS / localhost).
+        // Skip hashing on plain HTTP — hashes are stored for future duplicate detection.
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+          const fileHashes = await Promise.all(imageFiles.map((file) => computeSha256Hex(file)));
+          formData.append('content_hashes', JSON.stringify(fileHashes));
+        }
+
+        if (folderId != null) formData.append('folder_id', String(folderId));
+        const response = await uploadToSpace({ spaceId: space.id, formData, token });
+        const data = response.data;
+
+        if (response.status === 409 && data.recoverable) {
+          const uploadedCount = data.uploadedCount ?? Math.max(0, imageFiles.length - (data.pendingCount ?? 0));
+          const pendingFiles = imageFiles.slice(uploadedCount);
+          const pendingCount = data.pendingCount ?? pendingFiles.length;
+          const message = data.error ?? `Upload paused after ${uploadedCount} item${uploadedCount === 1 ? '' : 's'}.`;
+
+          setResumeReady(true);
+          onItemsCommitted?.();
+          onResumableUploadChange?.({
+            sessionId: data.uploadSessionId ?? `sim-${Date.now()}`,
+            uploadedCount,
+            totalCount: data.totalCount ?? imageFiles.length,
+            pendingCount,
+            message,
+          });
+
+          setUploadError(message);
+          setUploadSuccess(null);
+          setSelection(pendingFiles);
+          return;
+        }
       }
 
-      if (folderId != null) formData.append('folder_id', String(folderId));
-      await uploadToSpace({ spaceId: space.id, formData, token });
-      onUploadSuccess?.();
+      for (const videoFile of videoFiles) {
+        const videoHash = typeof crypto !== 'undefined' && crypto.subtle ? await computeSha256Hex(videoFile) : null;
+        await uploadVideoFile({
+          spaceId: space.id,
+          file: videoFile,
+          token,
+          folderId,
+          contentHash: videoHash,
+        });
+      }
 
-      setUploadSuccess(`Upload complete: ${files.length} item${files.length === 1 ? '' : 's'} uploaded.`);
-      setFiles([]);
-      previews.forEach((preview) => URL.revokeObjectURL(preview.url));
-      setPreviews([]);
+      clearResumableState();
+      onItemsCommitted?.();
+      onPendingFilesChange?.([]);
+
+      setUploadSuccess(`Upload complete: ${filesToUpload.length} item${filesToUpload.length === 1 ? '' : 's'} uploaded.`);
+      setSelection([]);
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
       setUploadError(apiErr?.error ?? 'Upload failed');
+      clearResumableState();
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitFiles(files);
   };
 
   return (
@@ -160,7 +261,9 @@ export default function UploadModal({ space, token, folderId, onClose, onUploadS
         >
           {uploading
             ? 'Uploading…'
-            : `Upload ${files.length > 0 ? `${files.length} Item${files.length > 1 ? 's' : ''}` : 'Items'}`}
+            : resumeReady
+              ? `Resume ${files.length > 0 ? `${files.length} Item${files.length > 1 ? 's' : ''}` : 'Items'}`
+              : `Upload ${files.length > 0 ? `${files.length} Item${files.length > 1 ? 's' : ''}` : 'Items'}`}
         </button>
         {uploadError && <p className="modal__error">{uploadError}</p>}
         {uploadSuccess && <p className="modal__success">{uploadSuccess}</p>}

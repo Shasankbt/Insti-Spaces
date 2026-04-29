@@ -1294,6 +1294,52 @@ code {
 
 /* ── Upload Media ── */
 
+.space-view__upload-resume-banner {
+  margin: 16px auto 0;
+  width: min(100%, 960px);
+  box-sizing: border-box;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background:
+    linear-gradient(135deg, rgba(170, 59, 255, 0.14), rgba(255, 255, 255, 0.02)),
+    var(--bg);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+.space-view__upload-resume-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+  margin-bottom: 4px;
+}
+
+.space-view__upload-resume-copy {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.space-view__upload-resume-btn {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.space-view__upload-resume-btn:hover {
+  background: rgba(170, 59, 255, 0.18);
+}
+
 .modal__upload-form {
   display: flex;
   flex-direction: column;
