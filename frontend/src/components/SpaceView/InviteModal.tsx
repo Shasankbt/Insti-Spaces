@@ -36,7 +36,7 @@ export default function InviteModal({
     data: friends,
     loading: friendsLoading,
     error: friendsError,
-  } = useDeltaSync<Friend>('http://localhost:3000/friends', {
+  } = useDeltaSync<Friend>(`${import.meta.env.VITE_API_URL}/friends`, {
     token,
     interval: POLL_INTERVAL,
     pause: tab !== 'friends',

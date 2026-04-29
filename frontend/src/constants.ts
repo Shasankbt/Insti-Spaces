@@ -1,4 +1,4 @@
-export const API_BASE = 'http://10.2.192.69:3000';
+export const API_BASE = import.meta.env.VITE_API_URL;
 export const POLL_INTERVAL = 5000;        // ms between delta-sync polls
 export const EXPLORER_PAGE_SIZE = 50;     // items per page in the folder explorer
 export const TRASH_LIMIT = 50;            // items per page in trash view
