@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
 import { uploadToSpace, uploadVideoFile } from '../../Api';
+import type { RecoverableUploadError } from '../../Api';
 import type { Space } from '../../types';
 
 interface MediaPreview {
@@ -168,13 +169,38 @@ export default function UploadModal({
 
       for (const videoFile of videoFiles) {
         const videoHash = typeof crypto !== 'undefined' && crypto.subtle ? await computeSha256Hex(videoFile) : null;
-        await uploadVideoFile({
-          spaceId: space.id,
-          file: videoFile,
-          token,
-          folderId,
-          contentHash: videoHash,
-        });
+        try {
+          await uploadVideoFile({
+            spaceId: space.id,
+            file: videoFile,
+            token,
+            folderId,
+            contentHash: videoHash,
+          });
+        } catch (err: unknown) {
+          // If server simulated a recoverable pause, show resume banner and preserve file selection
+          const isRecoverable = (err as RecoverableUploadError)?.details !== undefined;
+          if (isRecoverable) {
+            const details = (err as RecoverableUploadError).details;
+            const uploadedCount = details.nextChunkIndex;
+            const pendingCount = details.totalChunks - details.nextChunkIndex;
+
+            setResumeReady(true);
+            onResumableUploadChange?.({
+              sessionId: details.sessionId,
+              uploadedCount,
+              totalCount: details.totalChunks,
+              pendingCount,
+              message: details.error ?? 'Upload paused',
+            });
+
+            setUploadError(details.error ?? 'Upload paused');
+            setUploadSuccess(null);
+            setSelection([videoFile]);
+            return;
+          }
+          throw err;
+        }
       }
 
       clearResumableState();

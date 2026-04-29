@@ -8,6 +8,15 @@ const authHeaders = (token: string) => ({
   },
 });
 
+export class RecoverableUploadError extends Error {
+  details: { sessionId: string; nextChunkIndex: number; totalChunks: number; error?: string };
+  constructor(details: { sessionId: string; nextChunkIndex: number; totalChunks: number; error?: string }) {
+    super(details.error ?? 'Recoverable upload error');
+    this.details = details;
+    Object.setPrototypeOf(this, RecoverableUploadError.prototype);
+  }
+}
+
 export const registerUser = (data: { username: string; email: string; password: string }) =>
   axios.post(`${API}/auth/register`, data);
 
@@ -329,6 +338,8 @@ export const uploadVideoFile = async ({
   contentHash?: string | null;
   chunkSizeBytes?: number;
 }): Promise<SpaceItem> => {
+  // RecoverableUploadError is exported from the module root
+
   const sessionResponse = await createVideoUploadSession({
     spaceId,
     displayName: file.name,
@@ -357,6 +368,17 @@ export const uploadVideoFile = async ({
     });
 
     if (response.status === 409) {
+      // If server signals a recoverable pause (simulation), bubble up a special error
+      if ((response.data as any).recoverable) {
+        throw new RecoverableUploadError({
+          sessionId,
+          nextChunkIndex: (response.data as any).nextChunkIndex ?? nextChunkIndex,
+          totalChunks: (response.data as any).totalChunks ?? totalChunks,
+          error: (response.data as any).error,
+        });
+      }
+
+      // Otherwise this is a normal chunk-mismatch resume hint
       nextChunkIndex = response.data.nextChunkIndex;
       continue;
     }

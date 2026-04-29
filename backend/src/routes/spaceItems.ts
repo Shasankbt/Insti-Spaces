@@ -73,6 +73,7 @@ type VideoUploadSession = {
   nextChunkIndex: number;
   tempDir: string;
   createdAt: number;
+  simulatedFailed?: boolean;
 };
 
 const videoUploadSessions = new Map<string, VideoUploadSession>();
@@ -878,6 +879,21 @@ router.post(
       res.status(400).json({ error: 'Empty chunk payload' });
       return;
     }
+
+      // Simulation: for testing, fail once on chunk index 5 for videos with >= 10 chunks
+      if (session.totalChunks >= 10 && chunkIndex === 5 && !session.simulatedFailed) {
+        session.simulatedFailed = true;
+        console.log(`[video-sim] Simulating failure for session ${session.sessionId} at chunk ${chunkIndex}`);
+        // don't write the chunk — simulate a recoverable server-side pause
+        res.status(409).json({
+          recoverable: true,
+          error: `Simulated server interruption at chunk ${chunkIndex}`,
+          sessionId: session.sessionId,
+          nextChunkIndex: session.nextChunkIndex,
+          totalChunks: session.totalChunks,
+        });
+        return;
+      }
 
     await fs.writeFile(getVideoChunkPath(session, chunkIndex), chunk);
     session.nextChunkIndex += 1;
