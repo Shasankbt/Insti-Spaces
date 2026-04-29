@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { registerUser, loginUser } from '../Api';
+import { registerUser } from '../Api';
 import type { AuthUser } from '../types';
 
 export default function Register() {
@@ -16,8 +16,7 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await registerUser(form);
-      const res = await loginUser({ email: form.email, password: form.password });
+      const res = await registerUser(form);
       const data = res.data as { user: AuthUser; token: string };
       login(data.user, data.token);
       void navigate('/');
