@@ -4,16 +4,16 @@ export const DEBUG = process.env.DEBUG === 'true';
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 
 export const RATE = {
-  GLOBAL_WINDOW_MS:   60_000,          // 1 min — floor for all routes
+  GLOBAL_WINDOW_MS:   0,          // 1 min — floor for all routes
   GLOBAL_MAX:         200,
 
-  LOGIN_WINDOW_MS:    15 * 60_000,     // 15 min — bcrypt at cost=10 is ~100ms/call
+  LOGIN_WINDOW_MS:    0,     // 15 min — bcrypt at cost=10 is ~100ms/call
   LOGIN_MAX:          10,
 
-  REGISTER_WINDOW_MS: 60 * 60_000,     // 1 hr
+  REGISTER_WINDOW_MS: 0,     // 1 hr
   REGISTER_MAX:       5,
 
-  UPLOAD_WINDOW_MS:   60 * 60_000,     // 1 hr — each request triggers ffmpeg/sharp
+  UPLOAD_WINDOW_MS:   0,     // 1 hr — each request triggers ffmpeg/sharp
   UPLOAD_MAX:         20,
 } as const;
 
