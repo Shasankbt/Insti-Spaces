@@ -54,6 +54,12 @@ export const createFriendRequest = ({
 export const getFriends = ({ token }: { token: string }) =>
   axios.get(`${API}/friends`, authHeaders(token));
 
+export const getFriendSuggestions = ({ token }: { token: string }) =>
+  axios.get(`${API}/friends/suggestions`, {
+    params: { limit: 8 },
+    ...authHeaders(token),
+  });
+
 export const createSpace = ({ spacename, token }: { spacename: string; token: string }) =>
   axios.post(`${API}/spaces/create`, { spacename }, authHeaders(token));
 

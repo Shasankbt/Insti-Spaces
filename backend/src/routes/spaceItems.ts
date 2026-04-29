@@ -527,8 +527,7 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 
   const uploadSessionId = randomUUID();
-  const simulateInterrupt = shouldSimulateImageUploadInterruption(files);
-
+  const simulateInterrupt = false;// shouldSimulateImageUploadInterruption(files);  
   try {
     const existingNames = await getDisplayNamesInFolder({ spaceId, folderId });
     const takenNames = new Set(existingNames);

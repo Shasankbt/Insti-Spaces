@@ -1,5 +1,5 @@
 import pool, { withTransaction } from './pool';
-import type { FriendRequest, Friend } from '../types';
+import type { FriendRequest, Friend, FriendSuggestion } from '../types';
 import { PAGE } from '../config';
 
 const apiError = (message: string, statusCode: number) =>
@@ -110,6 +110,97 @@ export const listFriends = async ({
      LIMIT $2`,
     [userId, finalLimit, since],
   );
+  return rows;
+};
+
+export const suggestFriends = async ({
+  userId,
+  limit = 8,
+  maxDepth = 4,
+}: {
+  userId: number;
+  limit?: number;
+  maxDepth?: number;
+}): Promise<FriendSuggestion[]> => {
+  const finalLimit = Math.min(Math.max(limit, 1), 8);
+  const finalMaxDepth = Math.min(Math.max(maxDepth, 2), 5);
+
+  const { rows } = await pool.query<FriendSuggestion>(
+    `WITH RECURSIVE graph AS (
+       SELECT fid AS a, sid AS b FROM friends
+       UNION ALL
+       SELECT sid AS a, fid AS b FROM friends
+     ),
+     direct_friends AS (
+       SELECT b AS friend_id
+       FROM graph
+       WHERE a = $1
+     ),
+     walk AS (
+       SELECT
+         g.b AS candidate_id,
+         g.b AS root_friend_id,
+         1 AS distance,
+         ARRAY[$1::int, g.b] AS path
+       FROM graph g
+       WHERE g.a = $1
+
+       UNION ALL
+
+       SELECT
+         g.b AS candidate_id,
+         w.root_friend_id,
+         w.distance + 1,
+         w.path || g.b
+       FROM walk w
+       JOIN graph g ON g.a = w.candidate_id
+       WHERE w.distance < $3
+         AND NOT g.b = ANY(w.path)
+     ),
+     candidates AS (
+       SELECT
+         w.candidate_id,
+         MIN(w.distance) AS distance,
+         COUNT(DISTINCT w.root_friend_id) AS mutual_count
+       FROM walk w
+       WHERE w.candidate_id <> $1
+         AND w.distance > 1
+         AND NOT EXISTS (
+           SELECT 1 FROM direct_friends df WHERE df.friend_id = w.candidate_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM friend_requests fr
+           WHERE fr.status = 'pending'
+             AND ((fr.from_user_id = $1 AND fr.to_user_id = w.candidate_id)
+               OR (fr.from_user_id = w.candidate_id AND fr.to_user_id = $1))
+         )
+       GROUP BY w.candidate_id
+     ),
+     diverse AS (
+       SELECT
+         c.*,
+         ROW_NUMBER() OVER (
+           PARTITION BY c.distance
+           ORDER BY c.mutual_count DESC, md5(c.candidate_id::text || ':' || $1::text)
+         ) AS distance_rank
+       FROM candidates c
+     )
+     SELECT
+       u.id,
+       u.username,
+       d.distance::int,
+       d.mutual_count::int
+     FROM diverse d
+     JOIN users u ON u.id = d.candidate_id
+     ORDER BY
+       d.distance ASC,
+       d.distance_rank ASC,
+       d.mutual_count DESC,
+       u.username ASC
+     LIMIT $2`,
+    [userId, finalLimit, finalMaxDepth],
+  );
+
   return rows;
 };
 

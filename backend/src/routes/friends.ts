@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { authenticate, deltaSync } from '../middleware';
-import { findUserByUsername, createFriendRequest, acceptFriendRequest, listFriends } from '../db';
+import {
+  findUserByUsername,
+  createFriendRequest,
+  acceptFriendRequest,
+  listFriends,
+  suggestFriends,
+} from '../db';
 
 const router = Router();
 
@@ -15,6 +21,20 @@ router.get('/', authenticate, deltaSync, async (req, res): Promise<void> => {
     const code =
       statusErr.statusCode && Number.isInteger(statusErr.statusCode) ? statusErr.statusCode : 500;
     res.status(code).json({ error: statusErr.message || 'Failed to load friends' });
+  }
+});
+
+// get friend suggestions (GET /friends/suggestions)
+router.get('/suggestions', authenticate, async (req, res): Promise<void> => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const suggestions = await suggestFriends({ userId: req.user.id, limit });
+    res.json({ suggestions });
+  } catch (err: unknown) {
+    const statusErr = err as { statusCode?: number; message?: string };
+    const code =
+      statusErr.statusCode && Number.isInteger(statusErr.statusCode) ? statusErr.statusCode : 500;
+    res.status(code).json({ error: statusErr.message || 'Failed to load friend suggestions' });
   }
 });
 

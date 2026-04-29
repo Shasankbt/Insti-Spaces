@@ -216,6 +216,125 @@ code {
   opacity: 0.8;
 }
 
+.add-friends__suggestions {
+  margin-top: 1.5rem;
+}
+
+.add-friends__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0.75rem;
+}
+
+.add-friends__section-title {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.add-friends__section-action {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-h);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.85rem;
+}
+
+.add-friends__section-action:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.friend-suggestions__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0.5rem;
+}
+
+.friend-suggestion-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  min-width: 0;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.friend-suggestion-row:hover {
+  border-color: var(--accent-border);
+  background: var(--social-bg);
+}
+
+.friend-suggestion-row__name {
+  color: var(--text-h);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-suggestion-row__meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.friend-suggestion-row__dot {
+  color: var(--text);
+  opacity: 0.4;
+  font-size: 1.1rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.friend-suggestion-row__actions {
+  display: flex;
+  align-items: center;
+}
+
+.friend-suggestion-row__add-btn {
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 0.85rem;
+  white-space: nowrap;
+}
+
+.friend-suggestion-row__add-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.friend-suggestion-row__pending {
+  color: var(--text);
+  font-size: 0.85rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+
 /* ── Spaces ── */
 
 .spaces {
@@ -566,6 +685,10 @@ code {
   flex: 1;
   min-height: 0;
   padding: 0 1rem 1rem;
+}
+
+.space-view__tab-panel[hidden] {
+  display: none;
 }
 
 /* ── Tab bar ── */
@@ -1112,10 +1235,36 @@ code {
   color: crimson;
 }
 
+.space-feed__loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.space-feed__loader {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: space-feed-spin 0.75s linear infinite;
+}
+
+@keyframes space-feed-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .space-feed__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
   margin-top: 0.9rem;
-  column-width: 160px;
-  column-gap: 0.75rem;
+  align-items: start;
 }
 
 .space-feed__link {
@@ -1126,54 +1275,56 @@ code {
   padding: 0;
   cursor: zoom-in;
   width: 100%;
+  line-height: 0;
 }
 
 .space-feed__tile {
-  position: relative;
-  margin-bottom: 0.75rem;
-  break-inside: avoid;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .space-feed__thumb {
   width: 100%;
   height: auto;
+  max-height: 260px;
   object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border);
   display: block;
+  background: var(--code-bg);
 }
 
 .space-feed__thumb-like {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  min-width: 42px;
+  align-self: flex-start;
+  min-width: 52px;
   height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 0 9px;
-  border: 1px solid rgba(255, 255, 255, 0.32);
+  padding: 0 10px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(17, 24, 39, 0.68);
-  color: #fff;
+  background: var(--bg);
+  color: var(--text-h);
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(8px);
 }
 
 .space-feed__thumb-like:hover:not(:disabled),
 .space-feed__thumb-like:focus-visible {
-  background: rgba(17, 24, 39, 0.86);
-  border-color: rgba(255, 255, 255, 0.62);
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .space-feed__thumb-like--active {
-  color: #fecdd3;
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .space-feed__thumb-like:disabled {
@@ -1989,6 +2140,7 @@ code {
 }
 
 .space-explorer__tile-btn {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -1998,11 +2150,37 @@ code {
   cursor: pointer;
 }
 
+.space-explorer__tile-btn:disabled {
+  cursor: progress;
+}
+
 .space-explorer__thumb {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  opacity: 0;
+}
+
+.space-explorer__thumb--loaded {
+  opacity: 1;
+}
+
+.space-explorer__thumb-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent),
+    var(--code-bg, #1e293b);
+  background-size: 200% 100%;
+  animation: space-explorer-thumb-loading 1s linear infinite;
+}
+
+@keyframes space-explorer-thumb-loading {
+  to {
+    background-position: -200% 0;
+  }
 }
 
 /* Like button — only in lightbox footer now, not on thumbnails */

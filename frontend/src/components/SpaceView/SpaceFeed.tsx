@@ -9,11 +9,22 @@ import type { SpacePhoto } from '../../types';
 interface SpaceFeedProps {
   spaceId: number;
   token: string;
+  active: boolean;
 }
 
 const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
+const FEED_LOADING_BUFFER_MS = 1000;
 
-export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const mediaUrlWithToken = (src: string, token: string): string => {
+  const url = new URL(src);
+  url.searchParams.set('t', token);
+  return url.toString();
+};
+
+export default function SpaceFeed({ spaceId, token, active }: SpaceFeedProps) {
   const navigate = useNavigate();
   const [photos, setPhotos] = useState<SpacePhoto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,7 +44,10 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
       setError(null);
     }
     try {
-      const { data } = await getSpacePageView({ spaceId, token });
+      const [{ data }] = await Promise.all([
+        getSpacePageView({ spaceId, token }),
+        silent ? Promise.resolve() : wait(FEED_LOADING_BUFFER_MS),
+      ]);
       setPhotos(data.photos ?? []);
     } catch {
       if (!silent) {
@@ -47,16 +61,19 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
   }, [spaceId, token]);
 
   useEffect(() => {
+    if (!active || photos.length > 0) return;
     void fetchPhotos();
-  }, [fetchPhotos]);
+  }, [active, fetchPhotos, photos.length]);
 
   useEffect(() => {
+    if (!active) return undefined;
+
     const id = window.setInterval(() => {
       if (document.hidden) return;
       void fetchPhotos({ silent: true });
     }, POLL_INTERVAL);
     return () => window.clearInterval(id);
-  }, [fetchPhotos]);
+  }, [active, fetchPhotos]);
 
   useEffect(() => {
     if (activeIndex == null) return;
@@ -276,13 +293,18 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
         </button>
       </div>
 
-      {loading && photos.length === 0 && <p className="space-feed__message">Loading photos…</p>}
-      {error && <p className="space-feed__message space-feed__message--error">{error}</p>}
+      {loading && (
+        <div className="space-feed__loading" role="status" aria-live="polite">
+          <span className="space-feed__loader" aria-hidden="true" />
+          <span>Loading feed</span>
+        </div>
+      )}
+      {!loading && error && <p className="space-feed__message space-feed__message--error">{error}</p>}
       {!loading && !error && photos.length === 0 && (
         <p className="space-feed__message">No photos in this space yet.</p>
       )}
 
-      {photos.length > 0 && (
+      {!loading && photos.length > 0 && (
         <div className="space-feed__grid">
           {photos.map((photo, index) => (
             <div key={photo.photoId} className="space-feed__tile">
@@ -292,11 +314,11 @@ export default function SpaceFeed({ spaceId, token }: SpaceFeedProps) {
                 className="space-feed__link"
                 onClick={() => setActiveIndex(index)}
               >
-                <AuthenticatedImage
-                  src={itemThumbnailUrl(spaceId, photo.photoId)}
-                  token={token}
+                <img
+                  src={mediaUrlWithToken(itemThumbnailUrl(spaceId, photo.photoId), token)}
                   alt={photo.displayName}
                   loading="lazy"
+                  decoding="async"
                   className="space-feed__thumb"
                 />
               </button>

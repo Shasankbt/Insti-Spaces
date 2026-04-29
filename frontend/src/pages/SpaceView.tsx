@@ -78,6 +78,7 @@ export default function SpaceView() {
       return next;
     }, { replace: true });
   };
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(() => new Set([activeTab]));
 
   useEffect(() => {
     if (loading) return;
@@ -85,6 +86,15 @@ export default function SpaceView() {
     if (spaceLoading) return;
     if (spaceError) void navigate('/spaces', { replace: true });
   }, [isAuthenticated, loading, spaceLoading, spaceError, navigate]);
+
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   if (loading) return <p>Loading…</p>;
   if (!isAuthenticated) return null;
@@ -133,23 +143,27 @@ export default function SpaceView() {
       </nav>
 
       <div className="space-view__content">
-        {activeTab === 'feed' && (
-          <SpaceFeed spaceId={space.id} token={token!} />
+        {visitedTabs.has('feed') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'feed'}>
+            <SpaceFeed spaceId={space.id} token={token!} active={activeTab === 'feed'} />
+          </div>
         )}
 
-        {activeTab === 'explorer' && (
-          <SpaceExplorer
-            space={space}
-            token={token!}
-            role={space.role}
-            refreshTrigger={explorerRefresh}
-            onFolderChange={setCurrentFolderId}
-            onUpload={canUpload ? () => setOpenModal('upload') : undefined}
-          />
+        {visitedTabs.has('explorer') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'explorer'}>
+            <SpaceExplorer
+              space={space}
+              token={token!}
+              role={space.role}
+              refreshTrigger={explorerRefresh}
+              onFolderChange={setCurrentFolderId}
+              onUpload={canUpload ? () => setOpenModal('upload') : undefined}
+            />
+          </div>
         )}
 
-        {activeTab === 'members' && (
-          <div className="space-members-tab">
+        {visitedTabs.has('members') && (
+          <div className="space-view__tab-panel space-members-tab" hidden={activeTab !== 'members'}>
             <MembersList
               members={members}
               loading={membersLoading}
@@ -167,17 +181,21 @@ export default function SpaceView() {
           </div>
         )}
 
-        {activeTab === 'trash' && (
-          <SpaceTrash space={space} token={token!} role={space.role} />
+        {visitedTabs.has('trash') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'trash'}>
+            <SpaceTrash space={space} token={token!} role={space.role} />
+          </div>
         )}
 
-        {activeTab === 'about' && (
-          <SpaceAbout
-            space={space}
-            members={members}
-            onLeave={() => setOpenModal('leave')}
-            onDelete={space.role === 'admin' ? () => setOpenModal('delete') : undefined}
-          />
+        {visitedTabs.has('about') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'about'}>
+            <SpaceAbout
+              space={space}
+              members={members}
+              onLeave={() => setOpenModal('leave')}
+              onDelete={space.role === 'admin' ? () => setOpenModal('delete') : undefined}
+            />
+          </div>
         )}
       </div>
 

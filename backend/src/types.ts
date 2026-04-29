@@ -74,6 +74,13 @@ export interface UserSearchResult {
   relationship: 'friends' | 'pending' | 'none';
 }
 
+export interface FriendSuggestion {
+  id: number;
+  username: string;
+  distance: number;
+  mutual_count: number;
+}
+
 export interface SpaceFolder {
   id: number;
   space_id: number;

@@ -88,6 +88,120 @@ interface DeltaFolder {
   deleted: boolean;
 }
 
+function ExplorerItemTile({
+  item,
+  index,
+  spaceId,
+  token,
+  selected,
+  selectMode,
+  canWriteItem,
+  canTrashItem,
+  openMenuId,
+  onTileClick,
+  onToggleMenu,
+  onInfo,
+  onCopyLink,
+  onDownload,
+  onRename,
+  onMove,
+  onCopy,
+  onDelete,
+}: {
+  item: DeltaItem;
+  index: number;
+  spaceId: number;
+  token: string;
+  selected: boolean;
+  selectMode: boolean;
+  canWriteItem: boolean;
+  canTrashItem: boolean;
+  openMenuId: string | null;
+  onTileClick: (index: number, itemId: string) => void;
+  onToggleMenu: (event: React.MouseEvent<HTMLButtonElement>, itemId: string) => void;
+  onInfo: (item: DeltaItem) => void;
+  onCopyLink: (item: DeltaItem) => void;
+  onDownload: (item: DeltaItem) => void;
+  onRename: (item: DeltaItem) => void;
+  onMove: (item: DeltaItem) => void;
+  onCopy: (item: DeltaItem) => void;
+  onDelete: (item: DeltaItem) => void;
+}) {
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+
+  useEffect(() => {
+    setThumbnailLoaded(false);
+  }, [item.itemId]);
+
+  return (
+    <div
+      className={`space-explorer__tile-wrap space-explorer__tile-wrap--item${selected ? ' space-explorer__tile-wrap--selected' : ''}`}
+    >
+      <div className="space-explorer__tile--item">
+        {selectMode && thumbnailLoaded && (
+          <span className="space-explorer__select-check">
+            {selected ? '☑' : '☐'}
+          </span>
+        )}
+        <button
+          type="button"
+          className="space-explorer__tile-btn"
+          onClick={() => onTileClick(index, item.itemId)}
+          title={thumbnailLoaded ? item.displayName : undefined}
+          disabled={!thumbnailLoaded}
+        >
+          {!thumbnailLoaded && <span className="space-explorer__thumb-skeleton" aria-hidden="true" />}
+          <AuthenticatedImage
+            src={itemThumbnailUrl(spaceId, item.itemId)}
+            token={token}
+            alt={item.displayName}
+            loading="lazy"
+            className={`space-explorer__thumb${thumbnailLoaded ? ' space-explorer__thumb--loaded' : ''}`}
+            onLoad={() => setThumbnailLoaded(true)}
+          />
+        </button>
+      </div>
+
+      {thumbnailLoaded && (
+        <div className="space-explorer__tile-footer">
+          <span className="space-explorer__item-name" title={item.displayName}>
+            {item.displayName}
+          </span>
+          <button
+            type="button"
+            className="space-explorer__tile-menu-btn"
+            aria-label="Item options"
+            onClick={(event) => onToggleMenu(event, item.itemId)}
+          ><IconDots /></button>
+        </div>
+      )}
+
+      {thumbnailLoaded && openMenuId === item.itemId && (
+        <div className="space-explorer__menu space-explorer__menu--above" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="space-explorer__menu-item" onClick={() => onInfo(item)}>Info</button>
+          <button type="button" className="space-explorer__menu-item" onClick={() => onCopyLink(item)}>Copy link</button>
+          <button type="button" className="space-explorer__menu-item" onClick={() => onDownload(item)}>Download</button>
+          <button type="button" className="space-explorer__menu-item" onClick={() => onRename(item)}>Rename</button>
+          <button type="button" className="space-explorer__menu-item" onClick={() => onMove(item)}>Move to folder</button>
+          {canWriteItem && (
+            <button type="button" className="space-explorer__menu-item" onClick={() => onCopy(item)}>Copy to folder</button>
+          )}
+          {canTrashItem && (
+            <>
+              <hr className="space-explorer__menu-divider" />
+              <button
+                type="button"
+                className="space-explorer__menu-item space-explorer__menu-item--danger"
+                onClick={() => onDelete(item)}
+              >Move to trash</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Folder picker (mini-explorer for move / copy destination) ── */
 
 interface PickerFile {
@@ -911,98 +1025,36 @@ export default function SpaceExplorer({
             ))}
 
             {displayItems.map((item, index) => (
-              <div
+              <ExplorerItemTile
                 key={item.itemId}
-                className={`space-explorer__tile-wrap space-explorer__tile-wrap--item${selectedItemIds.has(item.itemId) ? ' space-explorer__tile-wrap--selected' : ''}`}
-              >
-                <div className="space-explorer__tile--item">
-                  {selectMode && (
-                    <span className="space-explorer__select-check">
-                      {selectedItemIds.has(item.itemId) ? '☑' : '☐'}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    className="space-explorer__tile-btn"
-                    onClick={() => selectMode ? toggleItemId(item.itemId) : setLightboxIndex(index)}
-                    title={item.displayName}
-                  >
-                    <AuthenticatedImage
-                      src={itemThumbnailUrl(space.id, item.itemId)}
-                      token={token}
-                      alt={item.displayName}
-                      loading="lazy"
-                      className="space-explorer__thumb"
-                    />
-                  </button>
-                </div>
-
-                {/* name + ⋮ below the thumbnail */}
-                <div className="space-explorer__tile-footer">
-                  <span className="space-explorer__item-name" title={item.displayName}>
-                    {item.displayName}
-                  </span>
-                  <button
-                    type="button"
-                    className="space-explorer__tile-menu-btn"
-                    aria-label="Item options"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenMenuId(openMenuId !== item.itemId ? item.itemId : null);
-                    }}
-                  ><IconDots /></button>
-                </div>
-
-                {openMenuId === item.itemId && (
-                  <div className="space-explorer__menu space-explorer__menu--above" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { setSelectedItem(item); setOpenMenuId(null); }}
-                    >Info</button>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { void handleCopyLink(item); }}
-                    >Copy link</button>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => {
-                        setOpenMenuId(null);
-                        void downloadSelected({ spaceId: space.id, token, itemIds: [item.itemId], folderIds: [] });
-                      }}
-                    >Download</button>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => { void handleRename(item); }}
-                    >Rename</button>
-                    <button
-                      type="button"
-                      className="space-explorer__menu-item"
-                      onClick={() => handleMoveToFolder(item)}
-                    >Move to folder</button>
-                    {canWrite(role) && (
-                      <button
-                        type="button"
-                        className="space-explorer__menu-item"
-                        onClick={() => handleCopyToFolder(item)}
-                      >Copy to folder</button>
-                    )}
-                    {canMoveItemsToTrash(role) && (
-                      <>
-                        <hr className="space-explorer__menu-divider" />
-                        <button
-                          type="button"
-                          className="space-explorer__menu-item space-explorer__menu-item--danger"
-                          onClick={() => { void handleDelete(item); }}
-                        >Move to trash</button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+                item={item}
+                index={index}
+                spaceId={space.id}
+                token={token}
+                selected={selectedItemIds.has(item.itemId)}
+                selectMode={selectMode}
+                canWriteItem={canWrite(role)}
+                canTrashItem={canMoveItemsToTrash(role)}
+                openMenuId={openMenuId}
+                onTileClick={(itemIndex, itemId) => {
+                  if (selectMode) toggleItemId(itemId);
+                  else setLightboxIndex(itemIndex);
+                }}
+                onToggleMenu={(event, itemId) => {
+                  event.stopPropagation();
+                  setOpenMenuId(openMenuId !== itemId ? itemId : null);
+                }}
+                onInfo={(target) => { setSelectedItem(target); setOpenMenuId(null); }}
+                onCopyLink={(target) => { void handleCopyLink(target); }}
+                onDownload={(target) => {
+                  setOpenMenuId(null);
+                  void downloadSelected({ spaceId: space.id, token, itemIds: [target.itemId], folderIds: [] });
+                }}
+                onRename={(target) => { void handleRename(target); }}
+                onMove={handleMoveToFolder}
+                onCopy={handleCopyToFolder}
+                onDelete={(target) => { void handleDelete(target); }}
+              />
             ))}
           </div>
         )}
