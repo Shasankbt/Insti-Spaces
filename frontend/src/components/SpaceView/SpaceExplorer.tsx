@@ -32,8 +32,10 @@ import {
   IconNewFolder,
   IconRefresh,
   IconSelect,
+  IconTerminal,
   IconUpload,
 } from './Icons';
+import SpaceTerminal from './SpaceTerminal';
 
 interface SpaceExplorerProps {
   space: Space;
@@ -392,6 +394,19 @@ export default function SpaceExplorer({
   const [pendingConflicts, setPendingConflicts] = useState<ItemConflict[]>([]);
   const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
   const [pendingRetry, setPendingRetry] = useState<((res: Record<string, ConflictResolution>) => Promise<void>) | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+  }, []);
   const [likeOverrides, setLikeOverrides] = useState<Record<string, { likeCount: number; likedByMe: boolean }>>({});
   const likeRequestInFlight = useRef(new Set<string>());
 
@@ -877,15 +892,37 @@ export default function SpaceExplorer({
             onClick={() => { void refreshItems(); void refreshFolders(); }}
           ><IconRefresh /></button>
 
-          {canWrite(role) && !selectMode && (
-            <button className="explorer-toolbar__icon-btn" title="New folder" onClick={() => setShowNewFolder(true)}>
+          {!selectMode && (
+            <button
+              className={`explorer-toolbar__icon-btn${canWrite(role) ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+              title={canWrite(role) ? 'New folder' : 'Need contributor or higher'}
+              onClick={() => {
+                if (!canWrite(role)) {
+                  showToast('You need contributor role or higher to create folders');
+                  return;
+                }
+                setShowNewFolder(true);
+              }}
+            >
               <IconNewFolder />
             </button>
           )}
 
-          {onUpload && canWrite(role) && (
-            <button className="explorer-toolbar__icon-btn" title="Upload" onClick={onUpload}><IconUpload /></button>
-          )}
+          <button
+            className={`explorer-toolbar__icon-btn${canWrite(role) && onUpload ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+            title={canWrite(role) ? 'Upload' : 'Need contributor or higher'}
+            onClick={() => {
+              if (!canWrite(role)) {
+                showToast('You need contributor role or higher to upload');
+                return;
+              }
+              if (!onUpload) {
+                showToast('Upload is not available here');
+                return;
+              }
+              onUpload();
+            }}
+          ><IconUpload /></button>
 
           <button
             className={`explorer-toolbar__icon-btn${selectMode ? ' explorer-toolbar__icon-btn--active' : ''}`}
@@ -895,36 +932,68 @@ export default function SpaceExplorer({
             <IconSelect />
           </button>
 
-          {selectMode && totalSelected > 0 && (
-            <>
-              {canWrite(role) && (
+          <button
+            className={`explorer-toolbar__icon-btn${terminalOpen ? ' explorer-toolbar__icon-btn--active' : ''}`}
+            title={terminalOpen ? 'Hide terminal' : 'Open terminal'}
+            onClick={() => setTerminalOpen((prev) => !prev)}
+          >
+            <IconTerminal />
+          </button>
+
+          {selectMode && (() => {
+            const moveEnabled = canWrite(role) && totalSelected > 0;
+            const copyEnabled = canWrite(role) && selectedItemIds.size > 0;
+            const downloadEnabled = totalSelected > 0;
+            const trashAllowed = selectedItemIds.size > 0 ? canMoveItemsToTrash(role) : canManageTrash(role);
+            const trashEnabled = totalSelected > 0 && trashAllowed;
+            return (
+              <>
                 <button
-                  className="explorer-toolbar__icon-btn"
-                  title={`Move ${totalSelected} selected`}
-                  onClick={() => { setBulkMoveError(null); setBulkMoveOpen(true); }}
+                  className={`explorer-toolbar__icon-btn${moveEnabled ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+                  title={canWrite(role) ? `Move ${totalSelected} selected` : 'Need contributor or higher'}
+                  onClick={() => {
+                    if (!canWrite(role)) { showToast('You need contributor role or higher to move items'); return; }
+                    if (totalSelected === 0) { showToast('Select something to move first'); return; }
+                    setBulkMoveError(null); setBulkMoveOpen(true);
+                  }}
                 ><IconMove /></button>
-              )}
-              {canWrite(role) && selectedItemIds.size > 0 && (
+
                 <button
-                  className="explorer-toolbar__icon-btn"
-                  title={`Copy ${selectedItemIds.size} selected`}
-                  onClick={() => { setBulkCopyError(null); setBulkCopyOpen(true); }}
+                  className={`explorer-toolbar__icon-btn${copyEnabled ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+                  title={canWrite(role) ? `Copy ${selectedItemIds.size} selected` : 'Need contributor or higher'}
+                  onClick={() => {
+                    if (!canWrite(role)) { showToast('You need contributor role or higher to copy items'); return; }
+                    if (selectedItemIds.size === 0) { showToast('Select some files to copy first'); return; }
+                    setBulkCopyError(null); setBulkCopyOpen(true);
+                  }}
                 ><IconCopy /></button>
-              )}
-              <button
-                className="explorer-toolbar__icon-btn"
-                title={`Download ${totalSelected} selected`}
-                onClick={handleDownload}
-              ><IconDownload /></button>
-              {(selectedItemIds.size > 0 ? canMoveItemsToTrash(role) : canManageTrash(role)) && (
+
                 <button
-                  className="explorer-toolbar__icon-btn explorer-toolbar__icon-btn--danger"
-                  title={`Move ${totalSelected} to trash`}
-                  onClick={() => { void handleBulkTrash(); }}
+                  className={`explorer-toolbar__icon-btn${downloadEnabled ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+                  title={`Download ${totalSelected} selected`}
+                  onClick={() => {
+                    if (totalSelected === 0) { showToast('Select something to download first'); return; }
+                    handleDownload();
+                  }}
+                ><IconDownload /></button>
+
+                <button
+                  className={`explorer-toolbar__icon-btn explorer-toolbar__icon-btn--danger${trashEnabled ? '' : ' explorer-toolbar__icon-btn--disabled'}`}
+                  title={trashAllowed ? `Move ${totalSelected} to trash` : 'Insufficient permissions'}
+                  onClick={() => {
+                    if (totalSelected === 0) { showToast('Select something to trash first'); return; }
+                    if (!trashAllowed) {
+                      showToast(selectedItemIds.size > 0
+                        ? 'You need contributor role or higher to trash items'
+                        : 'Only moderators and admins can trash folders');
+                      return;
+                    }
+                    void handleBulkTrash();
+                  }}
                 >🗑</button>
-              )}
-            </>
-          )}
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -1254,6 +1323,20 @@ export default function SpaceExplorer({
           />
         </Modal>
       )}
+
+      {terminalOpen && (
+        <SpaceTerminal
+          spaceId={space.id}
+          token={token}
+          onClose={() => setTerminalOpen(false)}
+          onMutated={() => {
+            void refreshItems();
+            void refreshFolders();
+          }}
+        />
+      )}
+
+      {toast && <div className="space-explorer__toast" role="status">{toast}</div>}
 
       {/* ── Conflict resolution ── */}
       {conflictModalOpen && (

@@ -55,10 +55,9 @@ body {
 }
 
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   box-sizing: border-box;
 }
@@ -647,12 +646,6 @@ code {
   min-height: 0;
 }
 
-#root:has(.space-view) {
-  width: 100%;
-  max-width: none;
-  border-inline: none;
-}
-
 .space-view__top {
   display: flex;
   align-items: center;
@@ -745,23 +738,38 @@ code {
   background: none;
   border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--text);
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 1.15rem;
   line-height: 1;
-  padding: 5px 8px;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .explorer-toolbar__icon-btn:hover:not(:disabled) {
-  background: var(--hover-bg, rgba(255,255,255,0.07));
-  border-color: var(--border, rgba(255,255,255,0.12));
-  color: var(--fg);
+  background: var(--accent-bg);
+  border-color: var(--border);
+  color: var(--text-h);
 }
 
 .explorer-toolbar__icon-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Soft-disabled: still clickable so we can show a permission toast */
+.explorer-toolbar__icon-btn--disabled {
+  opacity: 0.4;
+  cursor: help;
+}
+
+.explorer-toolbar__icon-btn--disabled:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
 }
 
 .explorer-toolbar__icon-btn--active {
@@ -2721,4 +2729,216 @@ code {
   font-weight: 600;
   margin: 0 !important;
   word-break: break-word;
+}
+
+/* ── Explorer toast (gentle "permission denied" popup) ─────────────────── */
+
+.space-explorer__toast {
+  position: fixed;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  z-index: 1100;
+  background: var(--bg);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.2px;
+  box-shadow: var(--shadow);
+  animation: explorer-toast-in 0.18s ease-out;
+  pointer-events: none;
+  max-width: 80vw;
+  text-align: center;
+}
+
+@keyframes explorer-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── Space terminal (bottom-docked, VSCode-like) ───────────────────────── */
+
+.space-terminal {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--code-bg);
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.space-terminal__resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.space-terminal__resize-handle:hover {
+  background: var(--accent-border);
+}
+
+.space-terminal__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  user-select: none;
+}
+
+.space-terminal__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-h);
+}
+
+.space-terminal__title-icon {
+  width: 1.05em;
+  height: 1.05em;
+  color: var(--accent);
+}
+
+.space-terminal__cwd {
+  margin-left: 0.55rem;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.space-terminal__badges {
+  display: inline-flex;
+  flex: 1;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+
+.space-terminal__badge {
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--social-bg);
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+.space-terminal__close {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 6px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.space-terminal__close:hover {
+  background: var(--accent-bg);
+  border-color: var(--border);
+  color: var(--text-h);
+}
+
+.space-terminal__transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.6rem 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
+.space-terminal__line {
+  white-space: pre-wrap;
+  min-height: 1.45em;
+}
+
+.space-terminal__line--prompt {
+  color: var(--text-h);
+}
+
+.space-terminal__line--output {
+  color: var(--text);
+}
+
+.space-terminal__line--info {
+  color: var(--accent);
+}
+
+.space-terminal__line--error {
+  color: #ef4444;
+}
+
+.space-terminal__prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding: 0.45rem 0.9rem;
+  background: var(--bg);
+}
+
+.space-terminal__prompt-cwd {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.space-terminal__prompt-caret {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.space-terminal__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  letter-spacing: 0;
+  caret-color: var(--accent);
+  padding: 2px 0;
+}
+
+.space-terminal__input:disabled {
+  opacity: 0.55;
+}
+
+.space-terminal__input--error {
+  color: #f87171;
+}
+
+.space-terminal__inline-error {
+  color: #f59e0b;
+  font-size: 0.95rem;
 }

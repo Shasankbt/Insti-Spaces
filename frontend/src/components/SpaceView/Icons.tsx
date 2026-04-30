@@ -114,3 +114,21 @@ export function IconHome(p: P) {
     </svg>
   );
 }
+
+export function IconTerminal(p: P) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7 9L10 12L7 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M12 15H17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+export function IconClose(p: P) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" {...p}>
+      <path d="M6 6L18 18M6 18L18 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}

@@ -657,3 +657,46 @@ export const permanentlyDeleteSpaceTrashItem = ({
 
 export const emptySpaceTrash = ({ spaceId, token }: { spaceId: number; token: string }) =>
   axios.delete(`${API}/spaces/${spaceId}/trash`, authHeaders(token));
+
+// ── Terminal command runner ────────────────────────────────────────────────
+
+export interface TerminalSelectionEntry {
+  id: string;
+  displayName: string;
+  captures: string[];
+}
+
+export interface TerminalState {
+  cwdFolderId: number | null;
+  selection: TerminalSelectionEntry[];
+  selectionCount: number;
+  pattern: { set: boolean; raw: string | null; captureCount: number };
+  filters: { set: boolean; summary: string | null };
+}
+
+export type TerminalResponse =
+  | { ok: true; outputLines: string[]; state: TerminalState; mutated: boolean }
+  | { ok: false; error: string };
+
+export const runSpaceCommand = ({
+  spaceId,
+  token,
+  line,
+  cwdFolderId,
+  selection,
+  lastPattern,
+  lastFilters,
+}: {
+  spaceId: number;
+  token: string;
+  line: string;
+  cwdFolderId: number | null;
+  selection: TerminalSelectionEntry[];
+  lastPattern: unknown;
+  lastFilters: unknown;
+}) =>
+  axios.post<TerminalResponse>(
+    `${API}/spaces/${spaceId}/cmd`,
+    { line, cwdFolderId, selection, lastPattern, lastFilters },
+    authHeaders(token),
+  );
