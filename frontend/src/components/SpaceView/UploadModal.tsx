@@ -67,6 +67,7 @@ export default function UploadModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef<MediaPreview[]>([]);
   const lastResumeSignalRef = useRef<number>(resumeSignal ?? 0);
+  const videoResumeFromRef = useRef<{ sessionId: string; nextChunkIndex: number; totalChunks: number } | null>(null);
 
   useEffect(() => {
     if (!initialFiles || initialFiles.length === 0) return;
@@ -99,6 +100,7 @@ export default function UploadModal({
 
   const clearResumableState = () => {
     setResumeReady(false);
+    videoResumeFromRef.current = null;
     onResumableUploadChange?.(null);
   };
 
@@ -176,7 +178,9 @@ export default function UploadModal({
             token,
             folderId,
             contentHash: videoHash,
+            resumeFrom: videoResumeFromRef.current ?? undefined,
           });
+          videoResumeFromRef.current = null;
         } catch (err: unknown) {
           // If server simulated a recoverable pause, show resume banner and preserve file selection
           const isRecoverable = (err as RecoverableUploadError)?.details !== undefined;
@@ -185,6 +189,11 @@ export default function UploadModal({
             const uploadedCount = details.nextChunkIndex;
             const pendingCount = details.totalChunks - details.nextChunkIndex;
 
+            videoResumeFromRef.current = {
+              sessionId: details.sessionId,
+              nextChunkIndex: details.nextChunkIndex,
+              totalChunks: details.totalChunks,
+            };
             setResumeReady(true);
             onResumableUploadChange?.({
               sessionId: details.sessionId,

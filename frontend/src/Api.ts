@@ -336,6 +336,7 @@ export const uploadVideoFile = async ({
   folderId,
   contentHash,
   chunkSizeBytes = 8 * 1024 * 1024,
+  resumeFrom,
 }: {
   spaceId: number;
   file: File;
@@ -343,23 +344,31 @@ export const uploadVideoFile = async ({
   folderId?: number | null;
   contentHash?: string | null;
   chunkSizeBytes?: number;
+  resumeFrom?: { sessionId: string; nextChunkIndex: number; totalChunks: number };
 }): Promise<SpaceItem> => {
-  // RecoverableUploadError is exported from the module root
+  let nextChunkIndex: number;
+  let totalChunks: number;
+  let sessionId: string;
 
-  const sessionResponse = await createVideoUploadSession({
-    spaceId,
-    displayName: file.name,
-    originalName: file.name,
-    mimeType: file.type || 'video/mp4',
-    sizeBytes: file.size,
-    folderId,
-    contentHash,
-    token,
-  });
-
-  let nextChunkIndex = sessionResponse.data.nextChunkIndex;
-  const totalChunks = sessionResponse.data.totalChunks;
-  const sessionId = sessionResponse.data.sessionId;
+  if (resumeFrom) {
+    sessionId = resumeFrom.sessionId;
+    nextChunkIndex = resumeFrom.nextChunkIndex;
+    totalChunks = resumeFrom.totalChunks;
+  } else {
+    const sessionResponse = await createVideoUploadSession({
+      spaceId,
+      displayName: file.name,
+      originalName: file.name,
+      mimeType: file.type || 'video/mp4',
+      sizeBytes: file.size,
+      folderId,
+      contentHash,
+      token,
+    });
+    nextChunkIndex = sessionResponse.data.nextChunkIndex;
+    totalChunks = sessionResponse.data.totalChunks;
+    sessionId = sessionResponse.data.sessionId;
+  }
 
   while (nextChunkIndex < totalChunks) {
     const start = nextChunkIndex * chunkSizeBytes;
