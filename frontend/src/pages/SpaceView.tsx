@@ -13,6 +13,7 @@ import SpaceExplorer from '../components/SpaceView/SpaceExplorer';
 import SpaceTrash from '../components/SpaceView/SpaceTrash';
 import SpaceHashCleanup from '../components/SpaceView/SpaceHashCleanup';
 import SpaceAbout from '../components/SpaceView/SpaceAbout';
+import SpaceInviteLinks from '../components/SpaceView/SpaceInviteLinks';
 
 type ModalType = 'invite' | 'upload' | 'leave' | 'requestRole' | 'delete' | null;
 
@@ -24,7 +25,9 @@ interface ResumableUploadSummary {
   message: string;
 }
 
-type TabType = 'feed' | 'explorer' | 'members' | 'trash' | 'duplicates' | 'similars' | 'about';
+type TabType =
+  | 'feed' | 'explorer' | 'members'
+  | 'trash' | 'duplicates' | 'similars' | 'invite-links' | 'about';
 
 const PRIMARY_TABS: { key: Extract<TabType, 'feed' | 'explorer' | 'members'>; label: string }[] = [
   { key: 'feed', label: 'Feed' },
@@ -32,11 +35,12 @@ const PRIMARY_TABS: { key: Extract<TabType, 'feed' | 'explorer' | 'members'>; la
   { key: 'members', label: 'Members' },
 ];
 
-const CLEANUP_TABS: { key: Extract<TabType, 'trash' | 'duplicates' | 'similars' | 'about'>; label: string }[] = [
-  { key: 'trash', label: 'Trash' },
-  { key: 'duplicates', label: 'Duplicates' },
-  { key: 'similars', label: 'Similars' },
-  { key: 'about', label: 'About' },
+const CLEANUP_TABS: { key: Extract<TabType, 'trash' | 'duplicates' | 'similars' | 'invite-links' | 'about'>; label: string }[] = [
+  { key: 'trash',         label: 'Trash' },
+  { key: 'duplicates',    label: 'Duplicates' },
+  { key: 'similars',      label: 'Similars' },
+  { key: 'invite-links',  label: 'Invite links' },
+  { key: 'about',         label: 'About' },
 ];
 
 export default function SpaceView() {
@@ -249,6 +253,16 @@ export default function SpaceView() {
         {visitedTabs.has('similars') && (
           <div className="space-view__tab-panel" hidden={activeTab !== 'similars'}>
             <SpaceHashCleanup space={space} token={token!} mode="similars" />
+          </div>
+        )}
+
+        {visitedTabs.has('invite-links') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'invite-links'}>
+            <SpaceInviteLinks
+              space={space}
+              token={token!}
+              active={activeTab === 'invite-links'}
+            />
           </div>
         )}
 

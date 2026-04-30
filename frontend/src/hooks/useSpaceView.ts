@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { changeRoleInSpace, removeMember } from '../Api';
 import { useDeltaSync } from './useDeltaSync';
-import { API_BASE, POLL_INTERVAL } from '../constants';
+import { API_BASE } from '../constants';
+import { POLL_INTERVAL } from '../timings';
 import type { Space, Member, Role } from '../types';
 
 interface UseSpaceViewOptions {
@@ -33,27 +34,55 @@ export default function useSpaceView({ id, token }: UseSpaceViewOptions): UseSpa
   const [removingUserId, setRemovingUserId] = useState<number | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
+  // Initial load + polling. Polling is what catches a role change (e.g. an
+  // admin promoting/demoting the current user) without requiring a page
+  // reload — without this, `space.role` was effectively frozen at mount and
+  // the explorer would render the wrong write-gate state intermittently.
   useEffect(() => {
-    if (!token) return;
-    setSpaceLoading(true);
-    setSpaceError(null);
-    fetch(`${API_BASE}/spaces/${id}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (r) => {
+    if (!token || !id) return;
+    let cancelled = false;
+
+    const fetchSpace = async (initial: boolean): Promise<void> => {
+      if (initial) {
+        setSpaceLoading(true);
+        setSpaceError(null);
+      }
+      try {
+        const r = await fetch(`${API_BASE}/spaces/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = (await r.json().catch(() => ({}))) as { space?: Space; error?: string };
         if (!r.ok) {
-          const err = Object.assign(new Error(data?.error ?? 'Failed to load space'), {
+          throw Object.assign(new Error(data?.error ?? 'Failed to load space'), {
             status: r.status,
             data,
           });
-          throw err;
         }
-        setSpace(data.space ?? null);
-      })
-      .catch((err: Error) => {
-        setSpace(null);
-        setSpaceError(err);
-      })
-      .finally(() => setSpaceLoading(false));
+        if (!cancelled) setSpace(data.space ?? null);
+      } catch (err) {
+        // Background polls don't blow away the existing space on failure —
+        // a flaky network shouldn't trip the loading-error UI mid-session.
+        if (!cancelled && initial) {
+          setSpace(null);
+          setSpaceError(err as Error);
+        }
+      } finally {
+        if (!cancelled && initial) setSpaceLoading(false);
+      }
+    };
+
+    void fetchSpace(true);
+    const pollId = window.setInterval(() => { void fetchSpace(false); }, POLL_INTERVAL);
+    const onVisible = () => {
+      if (!document.hidden) void fetchSpace(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollId);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [id, token]);
 
   const {

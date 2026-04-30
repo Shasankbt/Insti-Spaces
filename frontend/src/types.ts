@@ -139,6 +139,7 @@ export interface FriendRequestNotification {
   created_at: string;
   responded_at: string | null;
   deleted: boolean;
+  unread?: boolean;
 }
 
 export interface RoleRequestNotification {
@@ -153,6 +154,7 @@ export interface RoleRequestNotification {
   requested_role: Role;
   created_at: string;
   deleted: boolean;
+  unread?: boolean;
 }
 
 export type Notification = FriendRequestNotification | RoleRequestNotification;

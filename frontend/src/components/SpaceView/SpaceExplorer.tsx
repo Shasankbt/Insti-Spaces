@@ -19,7 +19,8 @@ import type { ExplorerFolder, Role, Space, SpaceItem } from '../../types';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import CreateFolderModal from './CreateFolderModal';
 import Modal from './Modal';
-import { API_BASE, EXPLORER_PAGE_SIZE, POLL_INTERVAL } from '../../constants';
+import { API_BASE, EXPLORER_PAGE_SIZE } from '../../constants';
+import { POLL_INTERVAL, TOAST_DURATION_MS } from '../../timings';
 import { itemFileUrl, itemThumbnailUrl } from '../../utils';
 import {
   IconBack,
@@ -401,7 +402,7 @@ export default function SpaceExplorer({
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2400);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
   }, []);
 
   useEffect(() => () => {

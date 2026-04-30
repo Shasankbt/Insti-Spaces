@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useReducer } from 'react';
 import { fetchDelta, fetchPage, applyDelta } from '../utils';
+import { DELTA_SYNC_FALLBACK_INTERVAL_MS } from '../timings';
 
 const EPOCH = new Date(0);
 
@@ -91,7 +92,7 @@ interface UseDeltaSyncResult<T> {
 
 export function useDeltaSync<T extends object>(
   url: string,
-  { token, interval = 15_000, pause = false, idKey = 'id', pageSize }: UseDeltaSyncOptions = {},
+  { token, interval = DELTA_SYNC_FALLBACK_INTERVAL_MS, pause = false, idKey = 'id', pageSize }: UseDeltaSyncOptions = {},
 ): UseDeltaSyncResult<T> {
   const reducerRef = useRef<ReturnType<typeof makeReducer<T>> | null>(null);
   if (!reducerRef.current) reducerRef.current = makeReducer<T>(idKey as keyof T);

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import Modal from './Modal';
 import { inviteToSpace, generateSpaceInviteLink } from '../../Api';
-import { INVITE_ROLES, POLL_INTERVAL } from '../../constants';
+import { INVITE_ROLES } from '../../constants';
+import { COPY_CONFIRM_DURATION_MS, POLL_INTERVAL } from '../../timings';
 import { useDeltaSync } from '../../hooks/useDeltaSync';
 import type { Space, Role, Friend, Member } from '../../types';
 
@@ -104,7 +105,7 @@ export default function InviteModal({
   if (navigator.clipboard?.writeText) {
     void navigator.clipboard.writeText(inviteLink).then(() => {
       setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 2500);
+      setTimeout(() => setLinkCopied(false), COPY_CONFIRM_DURATION_MS);
     });
   } else {
     // Fallback for non-HTTPS / local IP access
@@ -118,7 +119,7 @@ export default function InviteModal({
     document.execCommand('copy');
     document.body.removeChild(el);
     setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2500);
+    setTimeout(() => setLinkCopied(false), COPY_CONFIRM_DURATION_MS);
   }
 };
 

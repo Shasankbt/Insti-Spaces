@@ -1,5 +1,6 @@
 export const API_BASE = import.meta.env.VITE_API_URL;
-export const POLL_INTERVAL = 5000;        // ms between delta-sync polls
+// Time-related constants (POLL_INTERVAL, toast durations, etc.) live in
+// `./timings.ts` — keep that file as the single place to tune cadence.
 export const EXPLORER_PAGE_SIZE = 50;     // items per page in the folder explorer
 export const TRASH_LIMIT = 50;            // items per page in trash view
 

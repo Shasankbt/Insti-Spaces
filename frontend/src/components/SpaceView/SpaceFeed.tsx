@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSpacePageView, likeSpaceItem, unlikeSpaceItem } from '../../Api';
-import { POLL_INTERVAL } from '../../constants';
+import { POLL_INTERVAL } from '../../timings';
 import { itemFileUrl, itemThumbnailUrl } from '../../utils';
 import { AuthenticatedImage, AuthenticatedVideo } from './AuthenticatedMedia';
 import type { SpacePhoto } from '../../types';

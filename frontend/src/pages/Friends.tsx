@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { createFriendRequest, getFriendSuggestions, searchUsers } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
-import { API_BASE, POLL_INTERVAL } from '../constants';
+import { API_BASE } from '../constants';
+import { POLL_INTERVAL } from '../timings';
 import type { Friend, FriendSuggestion, UserSearchResult } from '../types';
 
 export default function Friends() {

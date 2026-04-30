@@ -13,17 +13,14 @@ import authRouter from './routes/auth';
 import friendsRouter from './routes/friends';
 import userRouter from './routes/user';
 import spacesRouter from './routes/spaces';
-import { RATE } from './config';
+import { RATE, URLS } from './config';
 import { Request, Response, NextFunction } from 'express';
 
 const app = express();
 
 app.use(express.json());
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://10.2.192.69:5173'
-  ],
+  origin: URLS.FRONTEND_ORIGINS,
   exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length'],
 }));
 

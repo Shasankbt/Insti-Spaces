@@ -1,9 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useRequireAuth from '../hooks/useRequireAuth';
-import { acceptFriendRequest, acceptRoleRequest, rejectRoleRequest } from '../Api';
+import { acceptFriendRequest, acceptRoleRequest, markNotificationsSeen, rejectRoleRequest } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
-import { API_BASE, POLL_INTERVAL } from '../constants';
+import { API_BASE } from '../constants';
+import { POLL_INTERVAL } from '../timings';
 import type { Notification, FriendRequestNotification, RoleRequestNotification } from '../types';
+
+const formatRelative = (iso: string): string => {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86_400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 7 * 86_400) return `${Math.floor(diffSec / 86_400)}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
 
 export default function Notifications() {
   const { user, token, loading: authLoading, isAuthenticated } = useRequireAuth();
@@ -23,6 +35,14 @@ export default function Notifications() {
   const [acceptingId, setAcceptingId] = useState<number | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Bump notifications_seen_at on first paint of this page. The Navbar's
+  // unread-count poll picks up the change on its next tick (and we trigger
+  // an immediate re-fetch by virtue of pathname-keyed effect there).
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    void markNotificationsSeen({ token }).catch(() => { /* non-fatal */ });
+  }, [isAuthenticated, token]);
 
   const onAccept = async (requestId: number) => {
     setActionError(null);
@@ -105,6 +125,12 @@ export default function Notifications() {
                     <strong>{rr.from_username}</strong> is requesting{' '}
                     <strong>{rr.requested_role}</strong> in <strong>{rr.spacename}</strong>
                   </p>
+                  <p
+                    className="notification__time"
+                    title={new Date(rr.created_at).toLocaleString()}
+                  >
+                    {formatRelative(rr.created_at)}
+                  </p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
@@ -149,6 +175,12 @@ export default function Notifications() {
                 ) : (
                   <p>{fr.from_username} sent you a friend request</p>
                 )}
+                <p
+                  className="notification__time"
+                  title={new Date(fr.created_at).toLocaleString()}
+                >
+                  {formatRelative(fr.created_at)}
+                </p>
               </div>
               {isPendingIncoming ? (
                 <button

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ImgHTMLAttributes, VideoHTMLAttributes } from 'react';
-
-const API_BASE = 'http://localhost:3000';
+import { API_BASE } from '../../constants';
 
 const toAbsoluteUrl = (url: string): string =>
   url.startsWith('http://') || url.startsWith('https://') ? url : `${API_BASE}${url}`;

@@ -1,6 +1,23 @@
 // ── Debug ─────────────────────────────────────────────────────────────────────
 export const DEBUG = process.env.DEBUG === 'true';
 
+// ── URLs / origins ────────────────────────────────────────────────────────────
+// Both default to localhost:5173 so plain `npm run dev` works zero-config.
+// For staging set in .env:
+//   FRONTEND_ORIGINS=http://localhost:5173,http://10.2.192.69:5173
+//   FRONTEND_BASE_URL=http://10.2.192.69:5173
+
+const parseOrigins = (raw: string | undefined): string[] =>
+  (raw ?? 'http://localhost:5173')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+export const URLS = {
+  FRONTEND_ORIGINS: parseOrigins(process.env.FRONTEND_ORIGINS),
+  FRONTEND_BASE_URL: process.env.FRONTEND_BASE_URL ?? 'http://localhost:5173',
+} as const;
+
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 
 export const RATE = {

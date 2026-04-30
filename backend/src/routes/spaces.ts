@@ -10,6 +10,8 @@ import {
   generateInviteLink,
   fetchInviteLink,
   markLinkInviteUsed,
+  listInviteLinks,
+  deleteInviteLink,
   getSpaceMemberCount,
   removeUserFromSpace,
 } from '../db';
@@ -17,6 +19,7 @@ import { HttpError, parseSpaceId, withTransaction, requireSpaceRole, handleError
 import { canInviteAs, canRemoveRole } from '../spacePermissions';
 import type { Role } from '../types';
 import { validateSpacename } from '../validation';
+import { URLS } from '../config';
 
 import spaceViewRouter from './spaceView';
 import spaceRolesRouter from './spaceRoles';
@@ -260,6 +263,9 @@ router.post('/:spaceId/invite', authenticate, async (req, res) => {
 });
 
 // GET /spaces/:spaceId/generate-invite-link
+// Legacy quick-link: viewer role, default 30-day expiry, multi-use. Used by
+// the existing InviteModal "Generate link" button. The full-control surface
+// lives at POST /spaces/:spaceId/invite-links below.
 router.get('/:spaceId/generate-invite-link', authenticate, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
@@ -270,8 +276,103 @@ router.get('/:spaceId/generate-invite-link', authenticate, async (req, res) => {
     return res.status(403).json({ error: 'Only admins and moderators can generate invite links' });
   }
 
-  const token = await generateInviteLink(spaceId, 'viewer');
-  res.json({ inviteLink: `http://localhost:5173/spaces/join?token=${token}` });
+  const { token } = await generateInviteLink({ spaceId, role: 'viewer' });
+  res.json({ inviteLink: `${URLS.FRONTEND_BASE_URL}/spaces/join?token=${token}` });
+});
+
+// ── Invite-link management (admin/moderator) ────────────────────────────────
+// All three routes share the role gate.
+
+const INVITE_ROLES: Role[] = ['viewer', 'contributor', 'moderator'];
+
+const requireInviteManager = async (
+  spaceId: number,
+  userId: number,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> => {
+  const membership = await getUserInSpace({ spaceId, userId });
+  if (!membership) return { ok: false, status: 403, error: 'Not a member of this space' };
+  if (!(['admin', 'moderator'] as Role[]).includes(membership.role)) {
+    return { ok: false, status: 403, error: 'Only admins and moderators can manage invite links' };
+  }
+  return { ok: true };
+};
+
+// POST /spaces/:spaceId/invite-links — create with full options
+router.post('/:spaceId/invite-links', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
+
+  const gate = await requireInviteManager(spaceId, req.user.id);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+  const body = req.body as { role?: unknown; expires_at?: unknown; single_use?: unknown };
+
+  // Role: must be in the invite allowlist (admin can't be invited via link).
+  const role = (body.role ?? 'viewer') as Role;
+  if (!INVITE_ROLES.includes(role)) {
+    return res.status(400).json({ error: `role must be one of ${INVITE_ROLES.join(', ')}` });
+  }
+
+  // expires_at: undefined → server default (30d); null → never; string → ISO future date.
+  let expiresAt: Date | null | undefined;
+  if (body.expires_at === undefined) {
+    expiresAt = undefined;
+  } else if (body.expires_at === null) {
+    expiresAt = null;
+  } else if (typeof body.expires_at === 'string') {
+    const d = new Date(body.expires_at);
+    if (Number.isNaN(d.getTime())) {
+      return res.status(400).json({ error: 'expires_at must be an ISO date string, null, or omitted' });
+    }
+    if (d.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'expires_at must be in the future' });
+    }
+    expiresAt = d;
+  } else {
+    return res.status(400).json({ error: 'expires_at must be an ISO date string, null, or omitted' });
+  }
+
+  const singleUse = body.single_use === undefined ? false : Boolean(body.single_use);
+
+  const { id, token } = await generateInviteLink({ spaceId, role, expiresAt, singleUse });
+  res.status(201).json({
+    id,
+    token,
+    inviteLink: `${URLS.FRONTEND_BASE_URL}/spaces/join?token=${token}`,
+  });
+});
+
+// GET /spaces/:spaceId/invite-links — list active links
+router.get('/:spaceId/invite-links', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) return res.status(400).json({ error: 'Invalid spaceId' });
+
+  const gate = await requireInviteManager(spaceId, req.user.id);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+  const links = await listInviteLinks(spaceId);
+  // Echo the full join URL so the frontend doesn't have to know the format.
+  const linksWithUrls = links.map((link) => ({
+    ...link,
+    inviteLink: `${URLS.FRONTEND_BASE_URL}/spaces/join?token=${link.token}`,
+  }));
+  res.json({ links: linksWithUrls });
+});
+
+// DELETE /spaces/:spaceId/invite-links/:linkId — revoke
+router.delete('/:spaceId/invite-links/:linkId', authenticate, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  const linkId = Number(req.params.linkId);
+  if (!spaceId || !Number.isFinite(linkId)) {
+    return res.status(400).json({ error: 'Invalid spaceId or linkId' });
+  }
+
+  const gate = await requireInviteManager(spaceId, req.user.id);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+
+  const removed = await deleteInviteLink({ id: linkId, spaceId });
+  if (!removed) return res.status(404).json({ error: 'Invite link not found' });
+  res.json({ message: 'Revoked' });
 });
 
 // DELETE /spaces/:spaceId/members/:userId — remove a member

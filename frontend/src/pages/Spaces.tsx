@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { createSpace } from '../Api';
 import { useDeltaSync } from '../hooks/useDeltaSync';
-import { API_BASE, POLL_INTERVAL } from '../constants';
+import { API_BASE } from '../constants';
+import { POLL_INTERVAL } from '../timings';
 import type { Space } from '../types';
 
 export default function Spaces() {

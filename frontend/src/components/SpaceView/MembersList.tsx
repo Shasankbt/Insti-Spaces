@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Member, Role } from '../../types';
+import { TOAST_DURATION_MS } from '../../timings';
 import { IconChangeRole, IconRemoveUser } from './Icons';
 import Modal from './Modal';
 
@@ -59,7 +60,7 @@ export default function MembersList({
   const showToast = (msg: string) => {
     setToast(msg);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToast(null), 2400);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
   };
 
   const filtered = useMemo(() => {

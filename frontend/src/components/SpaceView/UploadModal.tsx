@@ -3,6 +3,7 @@ import Modal from './Modal';
 import { uploadToSpace, uploadVideoFile } from '../../Api';
 import type { RecoverableUploadError } from '../../Api';
 import type { Space } from '../../types';
+import { UPLOAD_SUCCESS_DISMISS_MS } from '../../timings';
 
 interface MediaPreview {
   url: string;
@@ -220,7 +221,7 @@ export default function UploadModal({
       setSelection([]);
 
       // Briefly flash the success state, then dismiss the modal.
-      window.setTimeout(() => onClose(), 700);
+      window.setTimeout(() => onClose(), UPLOAD_SUCCESS_DISMISS_MS);
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
       setUploadError(apiErr?.error ?? 'Upload failed');

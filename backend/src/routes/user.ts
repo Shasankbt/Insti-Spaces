@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { authenticate, deltaSync } from '../middleware';
-import { searchUsers, listNotifications } from '../db';
+import {
+  searchUsers,
+  listNotifications,
+  countUnreadNotifications,
+  markNotificationsSeen,
+} from '../db';
 import { PAGE } from '../config';
 
 const router = Router();
@@ -12,6 +17,26 @@ router.get('/notifications', authenticate, deltaSync, async (req, res) => {
     res.json({ items });
   } catch {
     res.status(500).json({ error: 'Failed to load notifications' });
+  }
+});
+
+// Unread badge count for the navbar — cheap; called on a poll.
+router.get('/notifications/unread-count', authenticate, async (req, res) => {
+  try {
+    const unreadCount = await countUnreadNotifications(req.user.id);
+    res.json({ unreadCount });
+  } catch {
+    res.status(500).json({ error: 'Failed to load unread count' });
+  }
+});
+
+// Bump notifications_seen_at to NOW(); called when the user opens the page.
+router.post('/notifications/seen', authenticate, async (req, res) => {
+  try {
+    await markNotificationsSeen(req.user.id);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to mark notifications seen' });
   }
 });
 

@@ -3,8 +3,13 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(50) UNIQUE NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  notifications_seen_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Idempotent migration for existing databases. Defaults to NOW() so existing
+-- users start with everything marked read instead of a wall of historical unread.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_seen_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS friends (
   fid INTEGER NOT NULL REFERENCES users(id),

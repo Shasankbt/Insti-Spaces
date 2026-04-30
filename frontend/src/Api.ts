@@ -35,6 +35,12 @@ export const getNotifications = ({ token, since }: { token: string; since?: stri
     ...authHeaders(token),
   });
 
+export const getNotificationsUnreadCount = ({ token }: { token: string }) =>
+  axios.get<{ unreadCount: number }>(`${API}/user/notifications/unread-count`, authHeaders(token));
+
+export const markNotificationsSeen = ({ token }: { token: string }) =>
+  axios.post<{ ok: true }>(`${API}/user/notifications/seen`, {}, authHeaders(token));
+
 export const acceptFriendRequest = ({
   requestId,
   token,
@@ -106,6 +112,72 @@ export const generateSpaceInviteLink = ({
   spaceId: number;
   token: string;
 }) => axios.get(`${API}/spaces/${spaceId}/generate-invite-link`, authHeaders(token));
+
+// ── Invite-link management (admin/moderator only) ───────────────────────────
+
+export interface InviteLinkRow {
+  id: number;
+  token: string;
+  space_id: number;
+  role: Role;
+  expires_at: string | null;       // ISO from PG; null = never expires
+  single_use: boolean;
+  used: boolean;
+  created_at: string;
+  inviteLink: string;              // full join URL, server-built
+}
+
+export const listSpaceInviteLinks = ({
+  spaceId,
+  token,
+}: {
+  spaceId: number;
+  token: string;
+}) =>
+  axios.get<{ links: InviteLinkRow[] }>(
+    `${API}/spaces/${spaceId}/invite-links`,
+    authHeaders(token),
+  );
+
+export const createSpaceInviteLink = ({
+  spaceId,
+  role,
+  expiresAt,
+  singleUse,
+  token,
+}: {
+  spaceId: number;
+  role: Role;
+  /** undefined → server default (30d). null → never. ISO string → that exact instant. */
+  expiresAt?: string | null;
+  singleUse?: boolean;
+  token: string;
+}) =>
+  axios.post<{ id: number; token: string; inviteLink: string }>(
+    `${API}/spaces/${spaceId}/invite-links`,
+    {
+      role,
+      // Only forward keys that were explicitly provided; omitting falls
+      // through to the server defaults (30-day expiry, multi-use).
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+      ...(singleUse !== undefined ? { single_use: singleUse } : {}),
+    },
+    authHeaders(token),
+  );
+
+export const revokeSpaceInviteLink = ({
+  spaceId,
+  linkId,
+  token,
+}: {
+  spaceId: number;
+  linkId: number;
+  token: string;
+}) =>
+  axios.delete<{ message: string }>(
+    `${API}/spaces/${spaceId}/invite-links/${linkId}`,
+    authHeaders(token),
+  );
 
 export const leaveSpace = ({ spaceId, token }: { spaceId: number; token: string }) =>
   axios.delete(`${API}/spaces/${spaceId}/leave`, authHeaders(token));
