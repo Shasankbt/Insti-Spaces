@@ -50,9 +50,16 @@ router.use('/:spaceId', spaceCommandRouter);
 router.get('/', authenticate, deltaSync, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT s.id, s.spacename, f.role, f.updated_at
+      `SELECT s.id,
+              s.spacename,
+              s.created_at,
+              s.owner_user_id,
+              owner.username AS owner_username,
+              f.role,
+              f.updated_at
        FROM following f
        JOIN spaces s ON s.id = f.spaceid
+       LEFT JOIN users owner ON owner.id = s.owner_user_id
        WHERE f.userid = $1 AND f.deleted = false AND f.updated_at > $2
        ORDER BY s.spacename ASC`,
       [req.user.id, req.since],

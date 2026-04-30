@@ -79,7 +79,9 @@ export default function SpaceView() {
     setCleanupMenuOpen(false);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (tab === 'feed') {
+      // Keep tab=feed explicit when a folderPath is present, otherwise the
+      // fallback below would auto-resolve to 'explorer' and trap the user.
+      if (tab === 'feed' && !folderPath) {
         next.delete('tab');
       } else {
         next.set('tab', tab);
@@ -254,6 +256,8 @@ export default function SpaceView() {
           <div className="space-view__tab-panel" hidden={activeTab !== 'about'}>
             <SpaceAbout
               space={space}
+              token={token!}
+              active={activeTab === 'about'}
               onLeave={() => setOpenModal('leave')}
               onDelete={space.role === 'admin' ? () => setOpenModal('delete') : undefined}
             />

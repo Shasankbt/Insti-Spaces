@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { randomUUID } from 'crypto';
+import { createReadStream } from 'fs';
+import { randomUUID, createHash } from 'crypto';
 import type { StorageAdapter } from '../storage/StorageAdapter';
 import type { VideoUploadSession } from '../db/videoSessions';
 import type { SpaceItem } from '../types';
@@ -8,11 +9,29 @@ import { addSpaceItem } from '../db/spaceItems';
 import { deleteVideoSession } from '../db/videoSessions';
 import {
   isVideoMime,
+  isHeicMime,
   generateVideoThumbnail,
   generateImageThumbnail,
   generateImagePerceptualHash,
   applyMp4Faststart,
+  transcodeHeicToJpeg,
 } from '../utils/media';
+
+/**
+ * Stream-hash a file with SHA-256. Used as a server-side fallback when the
+ * client didn't supply a content_hash — most commonly when the browser is
+ * on plain HTTP and `crypto.subtle` is unavailable. Without this fallback
+ * the duplicates feature finds nothing because rows store NULL content_hash.
+ */
+async function hashFileSha256(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const h = createHash('sha256');
+    const stream = createReadStream(filePath);
+    stream.on('data', (chunk) => h.update(chunk));
+    stream.on('end', () => resolve(h.digest('hex')));
+    stream.on('error', reject);
+  });
+}
 
 interface CommitFileParams {
   inputPath: string;
@@ -55,22 +74,58 @@ export class SpaceItemService {
       this.storage.ensureDir(thumbnailsRel),
     ]);
 
-    const originalRel = path.join(originalsRel, storageFilename);
+    let originalRel = path.join(originalsRel, storageFilename);
     await this.storage.save(inputPath, originalRel);
-    const originalAbsPath = this.storage.resolveAbsolute(originalRel);
+    let originalAbsPath = this.storage.resolveAbsolute(originalRel);
+    let resolvedMime = mimeType;
+    let resolvedSize = sizeBytes;
+    let resolvedDisplayName = displayName;
 
-    const thumbnailExt = isVideoMime(mimeType) ? '.jpg' : '.webp';
-    const thumbnailFilename = `${path.parse(storageFilename).name}${thumbnailExt}`;
+    // HEIC isn't decodable by sharp on most builds and only Safari can render
+    // it. Transcode to JPEG once, in place, and pretend the rest of the
+    // pipeline only ever saw a JPEG.
+    if (isHeicMime(mimeType)) {
+      try {
+        const jpegAbsPath = await transcodeHeicToJpeg(originalAbsPath);
+        originalAbsPath = jpegAbsPath;
+        originalRel = path.join(originalsRel, path.basename(jpegAbsPath));
+        resolvedMime = 'image/jpeg';
+        const stat = await fs.stat(jpegAbsPath);
+        resolvedSize = stat.size;
+        // Swap the user-visible extension to match the new format.
+        const dnExt = path.extname(displayName);
+        if (dnExt && /^\.(heic|heif)$/i.test(dnExt)) {
+          resolvedDisplayName = `${path.basename(displayName, dnExt)}.jpg`;
+        }
+      } catch (err) {
+        // Hard fail — better to surface than to commit a row whose original
+        // can't be rendered or thumbnailed.
+        throw new Error(`HEIC transcode failed: ${(err as Error).message}`);
+      }
+    }
+
+    const finalStem = path.parse(originalRel).name;
+    const thumbnailExt = isVideoMime(resolvedMime) ? '.jpg' : '.webp';
+    const thumbnailFilename = `${finalStem}${thumbnailExt}`;
     const thumbnailRel = path.join(thumbnailsRel, thumbnailFilename);
     const thumbnailAbsPath = this.storage.resolveAbsolute(thumbnailRel);
 
     let perceptualHash: string | null = null;
-    if (isVideoMime(mimeType)) {
+    if (isVideoMime(resolvedMime)) {
       await generateVideoThumbnail({ inputPath: originalAbsPath, outputPath: thumbnailAbsPath });
-      if (mimeType === 'video/mp4') await applyMp4Faststart(originalAbsPath);
+      if (resolvedMime === 'video/mp4') await applyMp4Faststart(originalAbsPath);
     } else {
       perceptualHash = await generateImagePerceptualHash(originalAbsPath);
       await generateImageThumbnail({ inputPath: originalAbsPath, outputPath: thumbnailAbsPath });
+    }
+
+    let resolvedContentHash = contentHash;
+    if (resolvedContentHash == null) {
+      try {
+        resolvedContentHash = await hashFileSha256(originalAbsPath);
+      } catch {
+        // Non-fatal — leave NULL; the row simply won't participate in dedup.
+      }
     }
 
     return addSpaceItem({
@@ -79,11 +134,11 @@ export class SpaceItemService {
       folderId,
       filePath: originalRel,
       thumbnailPath: thumbnailRel,
-      contentHash,
+      contentHash: resolvedContentHash,
       perceptualHash,
-      mimeType,
-      sizeBytes,
-      displayName,
+      mimeType: resolvedMime,
+      sizeBytes: resolvedSize,
+      displayName: resolvedDisplayName,
       capturedAt: null,
     });
   }
@@ -152,7 +207,9 @@ export class SpaceItemService {
       folderId,
       filePath: newFileRel,
       thumbnailPath: newThumbRel,
-      contentHash: null,
+      // A copy is byte-identical to the source — preserve the hash so the
+      // duplicates view continues to group source + copy together.
+      contentHash: sourceItem.content_hash ?? null,
       perceptualHash: sourceItem.perceptual_hash,
       mimeType: sourceItem.mime_type,
       sizeBytes: sourceItem.size_bytes,

@@ -14,6 +14,8 @@ export interface Space {
   spacename: string;
   role: Role;
   created_at?: string;
+  owner_user_id?: number;
+  owner_username?: string;
   totalStorageBytes?: number;
 }
 

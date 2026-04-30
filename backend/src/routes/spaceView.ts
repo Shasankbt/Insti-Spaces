@@ -5,6 +5,7 @@ import {
   getSpaceMembers,
   getSpaceItemsForPageView,
   getLikeSummaryForItems,
+  getSpaceStorageBytes,
 } from '../db';
 import { parseSpaceId } from './spacesHelpers';
 import type { SpaceItemFeedCandidate } from '../db/spaceItems';
@@ -132,6 +133,22 @@ router.get('/', authenticate, isMember, async (req, res) => {
     }
     const space = await getSpaceById({ spaceId });
     res.json({ space: { ...space, role: req.member.role } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/storage — total storage bytes (lazy; only the About tab needs it)
+router.get('/storage', authenticate, isMember, async (req, res) => {
+  try {
+    const spaceId = parseSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Invalid spaceId' });
+      return;
+    }
+    const totalStorageBytes = await getSpaceStorageBytes({ spaceId });
+    res.json({ totalStorageBytes });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

@@ -218,6 +218,9 @@ export default function UploadModal({
 
       setUploadSuccess(`Upload complete: ${filesToUpload.length} item${filesToUpload.length === 1 ? '' : 's'} uploaded.`);
       setSelection([]);
+
+      // Briefly flash the success state, then dismiss the modal.
+      window.setTimeout(() => onClose(), 700);
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { error?: string } } }).response?.data;
       setUploadError(apiErr?.error ?? 'Upload failed');
@@ -284,7 +287,7 @@ export default function UploadModal({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*,video/*"
+          accept="image/*,video/*,.heic,.heif"
           multiple
           style={{ display: 'none' }}
           onChange={handleFileChange}

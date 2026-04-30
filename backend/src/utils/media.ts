@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs/promises';
 import { mediaPool } from '../workers/mediaPool';
 import type { MediaTaskResult } from '../workers/mediaWorker';
 
@@ -6,6 +7,9 @@ export const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('v
 export const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
 export const isMediaMime = (mimeType: string): boolean =>
   mimeType.startsWith('image/') || mimeType.startsWith('video/');
+export const isHeicMime = (mimeType: string): boolean =>
+  mimeType === 'image/heic' || mimeType === 'image/heif'
+  || mimeType === 'image/heic-sequence' || mimeType === 'image/heif-sequence';
 
 const startsWith = (bytes: Uint8Array, signature: number[]): boolean =>
   signature.every((value, index) => bytes[index] === value);
@@ -78,6 +82,40 @@ export const generateImagePerceptualHash = async (inputPath: string): Promise<st
 
 export const applyMp4Faststart = async (inputPath: string): Promise<void> => {
   await mediaPool.run({ type: 'video-faststart', inputPath });
+};
+
+/**
+ * Transcode a HEIC/HEIF file to JPEG in place. Sharp's libvips build doesn't
+ * always include HEIF support (and Safari is the only browser that can render
+ * HEIC natively), so we normalize to JPEG at upload time.
+ *
+ * Returns the new absolute path of the transcoded file (extension swapped to
+ * `.jpg`). The original HEIC file is removed on success.
+ */
+export const transcodeHeicToJpeg = async (inputPath: string): Promise<string> => {
+  // heic-convert is CJS with no type defs; require it at use-site so the
+  // rest of the module stays type-clean.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const heicConvert = require('heic-convert') as (opts: {
+    buffer: Buffer;
+    format: 'JPEG' | 'PNG';
+    quality?: number;
+  }) => Promise<ArrayBufferLike>;
+
+  const inputBuffer = await fs.readFile(inputPath);
+  const jpegBuffer = Buffer.from(
+    await heicConvert({ buffer: inputBuffer, format: 'JPEG', quality: 0.9 }),
+  );
+
+  const dir = path.dirname(inputPath);
+  const stem = path.basename(inputPath, path.extname(inputPath));
+  const outputPath = path.join(dir, `${stem}.jpg`);
+
+  await fs.writeFile(outputPath, jpegBuffer);
+  if (outputPath !== inputPath) {
+    try { await fs.unlink(inputPath); } catch { /* best-effort */ }
+  }
+  return outputPath;
 };
 
 export const toMediaUrl = (spaceId: number, storagePath: string): string => {

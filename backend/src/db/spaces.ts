@@ -44,28 +44,36 @@ export const getSpaceById = async ({
 }: {
   spaceId: number;
 }): Promise<Space | null> => {
-  const { rows } = await pool.query<Space & { totalStorageBytes: string | number }>(
+  // Storage size is fetched lazily by `getSpaceStorageBytes` when the About tab
+  // is opened — keeping it out of this query avoids a SUM(size_bytes) scan on
+  // every page load.
+  const { rows } = await pool.query<Space>(
     `SELECT
        s.id,
        s.spacename,
        s.created_at,
-       COALESCE(stats.total_storage_bytes, 0)::bigint AS "totalStorageBytes"
+       s.owner_user_id,
+       owner.username AS owner_username
      FROM spaces s
-     LEFT JOIN (
-       SELECT space_id, COALESCE(SUM(size_bytes), 0)::bigint AS total_storage_bytes
-       FROM space_items
-       WHERE deleted = false AND trashed_at IS NULL
-       GROUP BY space_id
-     ) stats ON stats.space_id = s.id
+     LEFT JOIN users owner ON owner.id = s.owner_user_id
      WHERE s.id = $1`,
     [spaceId],
   );
   const row = rows[0];
   if (!row) return null;
-  return {
-    ...row,
-    totalStorageBytes: Number(row.totalStorageBytes ?? 0),
-  };
+  return row;
+};
+
+export const getSpaceStorageBytes = async ({ spaceId }: { spaceId: number }): Promise<number> => {
+  const { rows } = await pool.query<{ total_storage_bytes: string }>(
+    `SELECT COALESCE(SUM(size_bytes), 0)::bigint AS total_storage_bytes
+       FROM space_items
+      WHERE space_id = $1
+        AND deleted = false
+        AND trashed_at IS NULL`,
+    [spaceId],
+  );
+  return Number(rows[0]?.total_storage_bytes ?? 0);
 };
 
 export const getSpaceMembers = async (

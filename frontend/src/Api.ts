@@ -110,6 +110,9 @@ export const generateSpaceInviteLink = ({
 export const leaveSpace = ({ spaceId, token }: { spaceId: number; token: string }) =>
   axios.delete(`${API}/spaces/${spaceId}/leave`, authHeaders(token));
 
+export const getSpaceStorage = ({ spaceId, token }: { spaceId: number; token: string }) =>
+  axios.get<{ totalStorageBytes: number }>(`${API}/spaces/${spaceId}/storage`, authHeaders(token));
+
 export const deleteSpace = ({ spaceId, token }: { spaceId: number; token: string }) =>
   axios.delete(`${API}/spaces/${spaceId}`, {
     ...authHeaders(token),

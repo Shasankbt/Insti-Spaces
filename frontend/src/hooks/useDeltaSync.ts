@@ -14,6 +14,7 @@ interface SyncState<T> {
 type SyncAction<T> =
   | { type: 'MERGE'; rows: T[]; since: Date }
   | { type: 'MERGE_PAGE'; rows: T[]; nextCursor: string | null }
+  | { type: 'REMOVE'; ids: ReadonlyArray<string | number> }
   | { type: 'RESET' }
   | { type: 'ERROR'; error: string }
   | { type: 'LOADING'; value: boolean };
@@ -45,6 +46,15 @@ function makeReducer<T extends { deleted?: boolean }>(idKey: keyof T) {
           error: null,
         };
       }
+      case 'REMOVE': {
+        if (action.ids.length === 0) return state;
+        let changed = false;
+        const next: Record<string | number, T> = { ...state.dataMap };
+        for (const id of action.ids) {
+          if (id in next) { delete next[id]; changed = true; }
+        }
+        return changed ? { ...state, dataMap: next } : state;
+      }
       case 'RESET':
         return { ...state, dataMap: {}, since: EPOCH, nextCursor: null, loading: true };
       case 'ERROR':
@@ -74,6 +84,9 @@ interface UseDeltaSyncResult<T> {
   sync: () => Promise<void>;
   refresh: () => Promise<void>;
   loadMore: () => Promise<void>;
+  /** Locally drop rows by id (no network). Use after a confirmed mutation
+   *  to skip a full grid refetch — the next delta sync will reconcile. */
+  removeIds: (ids: ReadonlyArray<string | number>) => void;
 }
 
 export function useDeltaSync<T extends object>(
@@ -181,6 +194,10 @@ export function useDeltaSync<T extends object>(
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [sync]);
 
+  const removeIds = useCallback((ids: ReadonlyArray<string | number>) => {
+    dispatch({ type: 'REMOVE', ids });
+  }, []);
+
   const data = Object.values(state.dataMap);
 
   return {
@@ -192,5 +209,6 @@ export function useDeltaSync<T extends object>(
     sync,
     refresh,
     loadMore,
+    removeIds,
   };
 }

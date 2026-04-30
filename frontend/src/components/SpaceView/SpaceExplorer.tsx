@@ -470,8 +470,10 @@ export default function SpaceExplorer({
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
       setSelectMode(false);
-      await refreshItems();
-      await refreshFolders();
+      // Optimistic local removal — skip the full refetch (and thumbnail re-render)
+      // and rely on the next delta sync to reconcile.
+      removeItemIds(fileIds);
+      removeFolderIds(folderIds);
     } catch (err: unknown) {
       const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
       window.alert(response?.data?.error ?? `Trash failed${response?.status ? ` (${response.status})` : ''}`);
@@ -492,8 +494,10 @@ export default function SpaceExplorer({
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
       setSelectMode(false);
-      await refreshItems();
-      await refreshFolders();
+      // The moved rows have left the current folder — drop them locally
+      // instead of refetching the entire grid.
+      removeItemIds(fileIds);
+      removeFolderIds(folderIds);
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
@@ -517,7 +521,9 @@ export default function SpaceExplorer({
       setSelectedItemIds(new Set());
       setSelectedFolderIds(new Set());
       setSelectMode(false);
-      await refreshItems();
+      // Copy may put new rows here if dest === current folder; a delta sync
+      // picks them up cheaply without resetting the existing thumbnails.
+      void syncItems();
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
@@ -550,7 +556,8 @@ export default function SpaceExplorer({
     try {
       await renameSpaceItem({ spaceId: space.id, itemId: item.itemId, displayName: trimmed, token });
       setOpenMenuId(null);
-      await refreshItems();
+      // Delta sync picks up the renamed row by id without dropping the rest.
+      void syncItems();
     } catch {
       window.alert('Rename failed');
     }
@@ -584,8 +591,8 @@ export default function SpaceExplorer({
       }
       setMoveItem(null);
       setMoveFolder(null);
-      await refreshItems();
-      await refreshFolders();
+      if (item) removeItemIds([item.itemId]);
+      if (folder) removeFolderIds([folder.id]);
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
@@ -596,8 +603,8 @@ export default function SpaceExplorer({
             else if (folder) await moveSpaceFolder({ spaceId: space.id, token, folderId: folder.id, parentId: folderId });
             setMoveItem(null);
             setMoveFolder(null);
-            await refreshItems();
-            await refreshFolders();
+            if (item) removeItemIds([item.itemId]);
+            if (folder) removeFolderIds([folder.id]);
           } catch { window.alert('Move failed'); }
           finally { setMoveLoading(false); }
         });
@@ -631,8 +638,9 @@ export default function SpaceExplorer({
     try {
       await copySpaceFolder({ spaceId: space.id, token, folderId: copyFolder.id, targetParentId });
       setCopyFolder(null);
-      await refreshItems();
-      await refreshFolders();
+      // Folder copy may produce a new sibling here; delta sync is enough.
+      void syncFolders();
+      void syncItems();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setCopyFolderError(msg ?? 'Copy failed');
@@ -649,7 +657,7 @@ export default function SpaceExplorer({
     try {
       await copyItems({ spaceId: space.id, token, itemIds: [item.itemId], folderId, resolutions });
       setCopyItem(null);
-      await refreshItems();
+      void syncItems();
     } catch (err: unknown) {
       const data = (err as { response?: { data?: { conflicts?: ItemConflict[] } } })?.response?.data;
       if (data?.conflicts) {
@@ -675,7 +683,7 @@ export default function SpaceExplorer({
         next.delete(item.itemId);
         return next;
       });
-      await refreshItems();
+      removeItemIds([item.itemId]);
     } catch {
       window.alert('Move to trash failed');
     }
@@ -693,8 +701,7 @@ export default function SpaceExplorer({
         next.delete(folder.id);
         return next;
       });
-      await refreshItems();
-      await refreshFolders();
+      removeFolderIds([folder.id]);
     } catch (err: unknown) {
       const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
       window.alert(response?.data?.error ?? `Move folder to trash failed${response?.status ? ` (${response.status})` : ''}`);
@@ -710,6 +717,8 @@ export default function SpaceExplorer({
     loading: itemsLoading,
     error: itemsError,
     refresh: refreshItems,
+    sync: syncItems,
+    removeIds: removeItemIds,
     nextCursor: itemsNextCursor,
     loadMore: loadMoreItems,
   } = useDeltaSync<DeltaItem>(itemsUrl, {
@@ -774,7 +783,12 @@ export default function SpaceExplorer({
     }
   }, [likeOverrides, space.id, token]);
 
-  const { data: allFolders, refresh: refreshFolders } = useDeltaSync<DeltaFolder>(
+  const {
+    data: allFolders,
+    refresh: refreshFolders,
+    sync: syncFolders,
+    removeIds: removeFolderIds,
+  } = useDeltaSync<DeltaFolder>(
     `${API_BASE}/spaces/${space.id}/folders`,
     { token, interval: POLL_INTERVAL, idKey: 'id' },
   );
@@ -1038,6 +1052,7 @@ export default function SpaceExplorer({
       {!loading && !error && isEmpty && <p className="space-explorer__message">This folder is empty.</p>}
 
       <div className="space-explorer__body">
+        <div className="space-explorer__main">
         {(subfolders.length > 0 || displayItems.length > 0) && (
           <div className="space-explorer__grid">
 
@@ -1133,6 +1148,7 @@ export default function SpaceExplorer({
             Load more
           </button>
         )}
+        </div>
 
         {selectedItem && (
           <aside className="space-explorer__info-panel">

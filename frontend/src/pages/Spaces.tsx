@@ -94,6 +94,17 @@ export default function Spaces() {
                     <div>
                       <div className="spaces__card-name">{s.spacename}</div>
                       <div className="spaces__card-role">{s.role}</div>
+                      <div className="spaces__card-meta">
+                        {s.owner_username && (
+                          <>by <span className="spaces__card-meta-strong">@{s.owner_username}</span></>
+                        )}
+                        {s.owner_username && s.created_at && <span className="spaces__card-meta-sep">·</span>}
+                        {s.created_at && (
+                          <span title={new Date(s.created_at).toLocaleString()}>
+                            {new Date(s.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <Link to={`/spaces/${s.id}`} className="spaces__action-btn">
                       Open
