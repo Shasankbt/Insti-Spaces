@@ -1,14 +1,8 @@
 import path from 'path';
 import fs from 'fs/promises';
-import sharp from 'sharp';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegStatic from 'ffmpeg-static';
-import { UPLOAD } from '../config';
 import { addSpaceItem } from '../db/spaceItems';
-
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
-}
+import { mediaPool } from '../workers/mediaPool';
+import type { MediaTaskResult } from '../workers/mediaWorker';
 
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
@@ -58,58 +52,26 @@ export const detectMimeFromMagicBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-export const generateVideoThumbnail = ({
+export const generateVideoThumbnail = async ({
   inputPath,
   outputPath,
 }: {
   inputPath: string;
   outputPath: string;
-}): Promise<void> =>
-  new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .outputOptions(['-vf', `thumbnail,scale=${UPLOAD.THUMB_PX}:-1`, '-frames:v', '1'])
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run();
-  });
+}): Promise<void> => {
+  await mediaPool.run({ type: 'video-thumbnail', inputPath, outputPath });
+};
 
 export const generateImagePerceptualHash = async (inputPath: string): Promise<string | null> => {
-  try {
-    const { data } = await sharp(inputPath)
-      .rotate()
-      .resize(8, 8, { fit: 'fill' })
-      .greyscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const pixels = [...data];
-    const average = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
-    let bits = '';
-    for (const value of pixels) {
-      bits += value >= average ? '1' : '0';
-    }
-    let hash = '';
-    for (let i = 0; i < bits.length; i += 4) {
-      hash += Number.parseInt(bits.slice(i, i + 4), 2).toString(16);
-    }
-    return hash;
-  } catch {
-    return null;
-  }
+  const result = (await mediaPool.run({ type: 'image-phash', inputPath })) as Extract<
+    MediaTaskResult,
+    { type: 'image-phash' }
+  >;
+  return result.hash;
 };
 
 export const applyMp4Faststart = async (inputPath: string): Promise<void> => {
-  const tmpPath = `${inputPath}.faststart.tmp`;
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg(inputPath)
-      .outputOptions(['-movflags', '+faststart', '-c', 'copy'])
-      .output(tmpPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run();
-  });
-  await fs.rename(tmpPath, inputPath);
+  await mediaPool.run({ type: 'video-faststart', inputPath });
 };
 
 export const commitStoredMediaFile = async ({
@@ -163,10 +125,7 @@ export const commitStoredMediaFile = async ({
     }
   } else {
     perceptualHash = await generateImagePerceptualHash(finalOriginalAbsPath);
-    await sharp(finalOriginalAbsPath)
-      .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: UPLOAD.THUMB_QUALITY })
-      .toFile(thumbnailAbsPath);
+    await mediaPool.run({ type: 'image-thumbnail', inputPath: finalOriginalAbsPath, outputPath: thumbnailAbsPath });
   }
 
   return addSpaceItem({
