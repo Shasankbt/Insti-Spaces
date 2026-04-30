@@ -113,7 +113,13 @@ export class SpaceItemService {
     let perceptualHash: string | null = null;
     if (isVideoMime(resolvedMime)) {
       await generateVideoThumbnail({ inputPath: originalAbsPath, outputPath: thumbnailAbsPath });
-      if (resolvedMime === 'video/mp4') await applyMp4Faststart(originalAbsPath);
+      if (resolvedMime === 'video/mp4') {
+        try {
+          await applyMp4Faststart(originalAbsPath);
+        } catch (err) {
+          console.warn('[faststart] skipped — file will still play:', (err as Error).message);
+        }
+      }
     } else {
       perceptualHash = await generateImagePerceptualHash(originalAbsPath);
       await generateImageThumbnail({ inputPath: originalAbsPath, outputPath: thumbnailAbsPath });

@@ -60,10 +60,10 @@ export default async function handleTask(task: MediaTask): Promise<MediaTaskResu
       return { type: 'video-thumbnail' };
 
     case 'video-faststart': {
-      const tmpPath = `${task.inputPath}.faststart.tmp`;
+      const tmpPath = `${task.inputPath}.faststart.mp4`;
       await new Promise<void>((resolve, reject) => {
         ffmpeg(task.inputPath)
-          .outputOptions(['-movflags', '+faststart', '-c', 'copy'])
+          .outputOptions(['-movflags', '+faststart', '-c', 'copy', '-f', 'mp4'])
           .output(tmpPath)
           .on('end', () => resolve())
           .on('error', (err) => reject(err))
