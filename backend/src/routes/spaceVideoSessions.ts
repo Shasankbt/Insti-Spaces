@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { authenticate, isMember } from '../middleware';
+import { TESTING } from '../config';
 import { canWrite } from './spaceUtils';
 import { getFolderById } from '../db/spaceFolders';
 import {
@@ -200,7 +201,12 @@ router.post(
     }
 
     // Simulation: fail once on chunk 1 for videos with >= 2 chunks (> 8 MB)
-    if (session.totalChunks >= 2 && chunkIndex === 1 && !simulatedSessionIds.has(session.sessionId)) {
+    if (
+      TESTING.SIMULATE_VIDEO_UPLOAD_FAILURE &&
+      session.totalChunks >= 2 &&
+      chunkIndex === 1 &&
+      !simulatedSessionIds.has(session.sessionId)
+    ) {
       simulatedSessionIds.add(session.sessionId);
       console.log(`[video-sim] Simulating failure for session ${session.sessionId} at chunk ${chunkIndex}`);
       res.status(409).json({

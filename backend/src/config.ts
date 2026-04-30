@@ -47,6 +47,12 @@ export const TRASH = {
   CLEANUP_INTERVAL_MS: 60 * 60_000,   // 1 hr
 } as const;
 
+// ── Testing ──────────────────────────────────────────────────────────────────
+
+export const TESTING = {
+  SIMULATE_VIDEO_UPLOAD_FAILURE: false,  // Simulate failure at chunk 1 for videos >= 2 chunks
+} as const;
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const AUTH = {
