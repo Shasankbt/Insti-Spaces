@@ -10,6 +10,8 @@ import {
   emptySpaceTrash,
   purgeExpiredSpaceTrash,
   setItemFolderId,
+  getContentHashGroups,
+  getPerceptualHashGroups,
 } from '../db/spaceItems';
 import {
   getFolderById,
@@ -19,6 +21,23 @@ import {
   getTrashedFolders,
 } from '../db/spaceFolders';
 import { PAGE } from '../config';
+
+const toHashGroupResponse = (group: Awaited<ReturnType<typeof getContentHashGroups>>[number]) => ({
+  hash: group.hash,
+  itemCount: group.itemCount,
+  totalSizeBytes: group.totalSizeBytes,
+  wastedBytes: group.wastedBytes,
+  items: group.items.map((item) => ({
+    itemId: item.itemId,
+    displayName: item.displayName,
+    path: item.path,
+    uploadedAt: item.uploadedAt,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes,
+    folderId: item.folderId,
+    uploadedBy: item.uploadedBy,
+  })),
+});
 
 const router = Router({ mergeParams: true });
 
@@ -49,6 +68,40 @@ router.get('/trash', authenticate, isMember, async (req, res) => {
       })),
       hasMore,
     });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/duplicates
+router.get('/duplicates', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  try {
+    const groups = await getContentHashGroups({ spaceId });
+    res.json({ groups: groups.map(toHashGroupResponse) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /spaces/:spaceId/similars
+router.get('/similars', authenticate, isMember, async (req, res) => {
+  const spaceId = parseSpaceId(req);
+  if (!spaceId) {
+    res.status(400).json({ error: 'Invalid spaceId' });
+    return;
+  }
+
+  try {
+    const groups = await getPerceptualHashGroups({ spaceId });
+    res.json({ groups: groups.map(toHashGroupResponse) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: message });

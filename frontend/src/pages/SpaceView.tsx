@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useRequireAuth from '../hooks/useRequireAuth';
 import useSpaceView from '../hooks/useSpaceView';
@@ -11,6 +11,7 @@ import DeleteSpaceModal from '../components/SpaceView/DeleteSpaceModal';
 import SpaceFeed from '../components/SpaceView/SpaceFeed';
 import SpaceExplorer from '../components/SpaceView/SpaceExplorer';
 import SpaceTrash from '../components/SpaceView/SpaceTrash';
+import SpaceHashCleanup from '../components/SpaceView/SpaceHashCleanup';
 import SpaceAbout from '../components/SpaceView/SpaceAbout';
 
 type ModalType = 'invite' | 'upload' | 'leave' | 'requestRole' | 'delete' | null;
@@ -23,13 +24,18 @@ interface ResumableUploadSummary {
   message: string;
 }
 
-type TabType = 'feed' | 'explorer' | 'members' | 'trash' | 'about';
+type TabType = 'feed' | 'explorer' | 'members' | 'trash' | 'duplicates' | 'similars' | 'about';
 
-const TABS: { key: TabType; label: string }[] = [
+const PRIMARY_TABS: { key: Extract<TabType, 'feed' | 'explorer' | 'members'>; label: string }[] = [
   { key: 'feed', label: 'Feed' },
   { key: 'explorer', label: 'Explorer' },
   { key: 'members', label: 'Members' },
+];
+
+const CLEANUP_TABS: { key: Extract<TabType, 'trash' | 'duplicates' | 'similars' | 'about'>; label: string }[] = [
   { key: 'trash', label: 'Trash' },
+  { key: 'duplicates', label: 'Duplicates' },
+  { key: 'similars', label: 'Similars' },
   { key: 'about', label: 'About' },
 ];
 
@@ -60,14 +66,17 @@ export default function SpaceView() {
   const [resumableUpload, setResumableUpload] = useState<ResumableUploadSummary | null>(null);
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [resumeSignal, setResumeSignal] = useState(0);
+  const [cleanupMenuOpen, setCleanupMenuOpen] = useState(false);
+  const menuShellRef = useRef<HTMLDivElement>(null);
   const requestedTab = searchParams.get('tab');
-  const activeTab: TabType = TABS.some((tab) => tab.key === requestedTab)
+  const activeTab: TabType = [...PRIMARY_TABS, ...CLEANUP_TABS].some((tab) => tab.key === requestedTab)
     ? (requestedTab as TabType)
     : folderPath
       ? 'explorer'
       : 'feed';
 
   const setActiveTab = (tab: TabType) => {
+    setCleanupMenuOpen(false);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (tab === 'feed') {
@@ -79,6 +88,17 @@ export default function SpaceView() {
     }, { replace: true });
   };
   const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(() => new Set([activeTab]));
+
+  useEffect(() => {
+    if (!cleanupMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuShellRef.current && !menuShellRef.current.contains(e.target as Node)) {
+        setCleanupMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [cleanupMenuOpen]);
 
   useEffect(() => {
     if (loading) return;
@@ -130,17 +150,48 @@ export default function SpaceView() {
         </div>
       )}
 
-      <nav className="space-tabs" aria-label="Space sections">
-        {TABS.map((tab) => (
+      <div className="space-view__tabs-row">
+        <nav className="space-tabs" aria-label="Space sections">
+          {PRIMARY_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`space-tab${activeTab === tab.key ? ' space-tab--active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="space-view__menu-shell" ref={menuShellRef}>
           <button
-            key={tab.key}
-            className={`space-tab${activeTab === tab.key ? ' space-tab--active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
+            type="button"
+            className={`space-view__menu-btn${cleanupMenuOpen || CLEANUP_TABS.some((tab) => tab.key === activeTab) ? ' space-view__menu-btn--active' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={cleanupMenuOpen}
+            title="Cleanup sections"
+            onClick={() => setCleanupMenuOpen((prev) => !prev)}
           >
-            {tab.label}
+            ☰
           </button>
-        ))}
-      </nav>
+
+          {cleanupMenuOpen && (
+            <div className="space-view__menu" role="menu" aria-label="Cleanup sections">
+              {CLEANUP_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`space-view__menu-item${activeTab === tab.key ? ' space-view__menu-item--active' : ''}`}
+                  role="menuitem"
+                  onClick={() => setActiveTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="space-view__content">
         {visitedTabs.has('feed') && (
@@ -187,11 +238,22 @@ export default function SpaceView() {
           </div>
         )}
 
+        {visitedTabs.has('duplicates') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'duplicates'}>
+            <SpaceHashCleanup space={space} token={token!} mode="duplicates" />
+          </div>
+        )}
+
+        {visitedTabs.has('similars') && (
+          <div className="space-view__tab-panel" hidden={activeTab !== 'similars'}>
+            <SpaceHashCleanup space={space} token={token!} mode="similars" />
+          </div>
+        )}
+
         {visitedTabs.has('about') && (
           <div className="space-view__tab-panel" hidden={activeTab !== 'about'}>
             <SpaceAbout
               space={space}
-              members={members}
               onLeave={() => setOpenModal('leave')}
               onDelete={space.role === 'admin' ? () => setOpenModal('delete') : undefined}
             />

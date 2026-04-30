@@ -14,6 +14,7 @@ export interface Space {
   spacename: string;
   role: Role;
   created_at?: string;
+  totalStorageBytes?: number;
 }
 
 export interface Member {
@@ -83,6 +84,25 @@ export interface SpaceItem {
   likedByMe?: boolean;
   trashedAt?: string | null;
   expiresAt?: string | null;
+}
+
+export interface SpaceHashGroupItem {
+  itemId: string;
+  displayName: string;
+  path: string;
+  uploadedAt: string;
+  mimeType: string;
+  sizeBytes: number;
+  folderId: number | null;
+  uploadedBy: string;
+}
+
+export interface SpaceHashGroup {
+  hash: string;
+  itemCount: number;
+  totalSizeBytes: number;
+  wastedBytes: number;
+  items: SpaceHashGroupItem[];
 }
 
 export interface TrashedFolder {

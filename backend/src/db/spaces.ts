@@ -44,11 +44,28 @@ export const getSpaceById = async ({
 }: {
   spaceId: number;
 }): Promise<Space | null> => {
-  const { rows } = await pool.query<Space>(
-    `SELECT id, spacename, created_at FROM spaces WHERE id = $1`,
+  const { rows } = await pool.query<Space & { totalStorageBytes: string | number }>(
+    `SELECT
+       s.id,
+       s.spacename,
+       s.created_at,
+       COALESCE(stats.total_storage_bytes, 0)::bigint AS "totalStorageBytes"
+     FROM spaces s
+     LEFT JOIN (
+       SELECT space_id, COALESCE(SUM(size_bytes), 0)::bigint AS total_storage_bytes
+       FROM space_items
+       WHERE deleted = false AND trashed_at IS NULL
+       GROUP BY space_id
+     ) stats ON stats.space_id = s.id
+     WHERE s.id = $1`,
     [spaceId],
   );
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    totalStorageBytes: Number(row.totalStorageBytes ?? 0),
+  };
 };
 
 export const getSpaceMembers = async (

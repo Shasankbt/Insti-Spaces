@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ExplorerResponse, Role, SpaceItem, SpacePhoto, TrashedFolder } from './types';
+import type { ExplorerResponse, Role, SpaceHashGroup, SpaceItem, SpacePhoto, TrashedFolder } from './types';
 import { API_BASE as API } from './constants';
 
 const authHeaders = (token: string) => ({
@@ -596,6 +596,24 @@ export const getSpaceTrash = ({
     params: { limit, offset },
     ...authHeaders(token),
   });
+
+export const getSpaceDuplicates = ({
+  spaceId,
+  token,
+}: {
+  spaceId: number;
+  token: string;
+}) =>
+  axios.get<{ groups: SpaceHashGroup[] }>(`${API}/spaces/${spaceId}/duplicates`, authHeaders(token));
+
+export const getSpaceSimilars = ({
+  spaceId,
+  token,
+}: {
+  spaceId: number;
+  token: string;
+}) =>
+  axios.get<{ groups: SpaceHashGroup[] }>(`${API}/spaces/${spaceId}/similars`, authHeaders(token));
 
 export const getSpaceTrashFolderItems = ({
   spaceId,

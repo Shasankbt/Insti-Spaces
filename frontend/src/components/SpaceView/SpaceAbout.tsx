@@ -1,31 +1,26 @@
-import type { Member, Space } from '../../types';
+import type { Space } from '../../types';
 
 interface SpaceAboutProps {
   space: Space;
-  members: Member[];
   onLeave: () => void;
   onDelete?: () => void;
 }
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
 
-export default function SpaceAbout({ space, members, onLeave, onDelete }: SpaceAboutProps) {
+export default function SpaceAbout({ space, onLeave, onDelete }: SpaceAboutProps) {
   return (
     <div className="space-about">
       <div className="space-about__section">
         <h3 className="space-about__name">{space.spacename}</h3>
         <dl className="space-about__dl">
-          <dt>Your role</dt>
-          <dd><span className="space-about__role-badge">{space.role}</span></dd>
-          <dt>Members</dt>
-          <dd>{members.length}</dd>
-          {space.created_at && (
-            <>
-              <dt>Created</dt>
-              <dd>{formatDate(space.created_at)}</dd>
-            </>
-          )}
+          <dt>Storage used</dt>
+          <dd>{formatBytes(space.totalStorageBytes ?? 0)}</dd>
         </dl>
       </div>
 

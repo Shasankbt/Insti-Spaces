@@ -30,6 +30,7 @@ export interface Space {
   id: number;
   spacename: string;
   created_at: Date;
+  totalStorageBytes?: number;
 }
 
 export interface RoleRequest {

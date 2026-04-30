@@ -2,6 +2,25 @@ import pool from './pool';
 import type { SpaceItem } from '../types';
 import { PAGE, TRASH } from '../config';
 
+export type HashGroupItem = {
+  itemId: string;
+  displayName: string;
+  path: string;
+  uploadedAt: Date;
+  mimeType: string;
+  sizeBytes: number;
+  folderId: number | null;
+  uploadedBy: string;
+};
+
+export type HashGroup = {
+  hash: string;
+  itemCount: number;
+  totalSizeBytes: number;
+  wastedBytes: number;
+  items: HashGroupItem[];
+};
+
 export const addSpaceItem = async ({
   spaceId,
   uploaderId,
@@ -98,6 +117,116 @@ export const getExistingContentHashes = async ({
   return rows.map((row) => row.content_hash);
 };
 
+const getHashGroups = async ({
+  spaceId,
+  hashColumn,
+}: {
+  spaceId: number;
+  hashColumn: 'content_hash' | 'perceptual_hash';
+}): Promise<HashGroup[]> => {
+  const { rows } = await pool.query<{
+    hash_value: string;
+    group_item_count: number;
+    group_total_size_bytes: string | number;
+    photo_id: string;
+    display_name: string;
+    uploaded_at: Date;
+    mime_type: string;
+    size_bytes: number;
+    folder_id: number | null;
+    uploader_username: string;
+    folder_path: string | null;
+  }>(
+    `WITH grouped AS (
+       SELECT ${hashColumn} AS hash_value,
+              COUNT(*)::int AS group_item_count,
+              COALESCE(SUM(size_bytes), 0)::bigint AS group_total_size_bytes
+       FROM space_items
+       WHERE space_id = $1
+         AND deleted = false
+         AND trashed_at IS NULL
+         AND ${hashColumn} IS NOT NULL
+       GROUP BY ${hashColumn}
+       HAVING COUNT(*) > 1
+     )
+     SELECT
+       g.hash_value,
+       g.group_item_count,
+       g.group_total_size_bytes,
+       si.photo_id,
+       si.display_name,
+       si.uploaded_at,
+       si.mime_type,
+       si.size_bytes,
+       si.folder_id,
+       u.username AS uploader_username,
+       fp.folder_path
+     FROM space_items si
+     JOIN grouped g ON g.hash_value = si.${hashColumn}
+     JOIN users u ON u.id = si.uploader_id
+     LEFT JOIN LATERAL (
+       WITH RECURSIVE ancestors AS (
+         SELECT id, parent_id, name, 0 AS depth
+         FROM space_folders
+         WHERE id = si.folder_id AND space_id = si.space_id AND deleted = false
+         UNION ALL
+         SELECT f.id, f.parent_id, f.name, a.depth + 1
+         FROM space_folders f
+         JOIN ancestors a ON a.parent_id = f.id
+         WHERE f.space_id = si.space_id AND f.deleted = false
+       )
+       SELECT CASE
+         WHEN si.folder_id IS NULL THEN 'Root'
+         ELSE string_agg(name, ' / ' ORDER BY depth DESC)
+       END AS folder_path
+       FROM ancestors
+     ) fp ON TRUE
+     WHERE si.space_id = $1
+       AND si.deleted = false
+       AND si.trashed_at IS NULL
+     ORDER BY g.hash_value ASC, si.uploaded_at ASC, si.photo_id ASC`,
+    [spaceId],
+  );
+
+  const grouped = new Map<string, HashGroup>();
+  for (const row of rows) {
+    const hash = row.hash_value;
+    const existing = grouped.get(hash);
+    const item: HashGroupItem = {
+      itemId: row.photo_id,
+      displayName: row.display_name,
+      path: `${row.folder_path ?? 'Root'} / ${row.display_name}`,
+      uploadedAt: row.uploaded_at,
+      mimeType: row.mime_type,
+      sizeBytes: row.size_bytes,
+      folderId: row.folder_id,
+      uploadedBy: row.uploader_username,
+    };
+
+    if (!existing) {
+      const totalSizeBytes = Number(row.group_total_size_bytes ?? 0);
+      grouped.set(hash, {
+        hash,
+        itemCount: Number(row.group_item_count ?? 0),
+        totalSizeBytes,
+        wastedBytes: Math.max(0, totalSizeBytes - row.size_bytes),
+        items: [item],
+      });
+      continue;
+    }
+
+    existing.items.push(item);
+  }
+
+  return [...grouped.values()];
+};
+
+export const getContentHashGroups = async ({ spaceId }: { spaceId: number }): Promise<HashGroup[]> =>
+  getHashGroups({ spaceId, hashColumn: 'content_hash' });
+
+export const getPerceptualHashGroups = async ({ spaceId }: { spaceId: number }): Promise<HashGroup[]> =>
+  getHashGroups({ spaceId, hashColumn: 'perceptual_hash' });
+
 export const getSpaceItemsForPageView = async ({
   spaceId,
   limit,
@@ -115,8 +244,8 @@ export const getSpaceItemsForPageView = async ({
                  si.*,
                  COALESCE(lc.like_count, 0)::int AS like_count,
                  (
-                   COALESCE(lc.like_count, 0) * 10
-                   + GREATEST(0, 8 - (EXTRACT(EPOCH FROM (NOW() - si.uploaded_at)) / 86400.0))
+                   COALESCE(lc.like_count, 0) * 4
+                   + GREATEST(0, 2 - (EXTRACT(EPOCH FROM (NOW() - si.uploaded_at)) / 86400.0 / 14.0))
                  )::float AS feed_score
                FROM space_items si
                LEFT JOIN like_counts lc ON lc.space_item_id = si.photo_id
