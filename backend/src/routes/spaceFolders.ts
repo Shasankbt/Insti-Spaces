@@ -21,9 +21,9 @@ import { getItemsInFolder, addSpaceItem } from '../db/spaceItems';
 
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
+import { canWrite, canManageTrash } from './spaceUtils';
+
 const router = Router({ mergeParams: true });
-const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
-const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
 
 // POST /spaces/:spaceId/folders — create a folder (contributor+)
 router.post('/folders', authenticate, isMember, async (req, res) => {

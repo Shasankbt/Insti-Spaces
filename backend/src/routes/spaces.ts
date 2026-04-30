@@ -23,6 +23,10 @@ import spaceRolesRouter from './spaceRoles';
 import spaceItemsRouter from './spaceItems';
 import spaceFoldersRouter from './spaceFolders';
 import spaceItemActionsRouter from './spaceItemActions';
+import spaceTrashRouter from './spaceTrash';
+import spaceLikesRouter from './spaceLikes';
+import spaceDownloadRouter from './spaceDownload';
+import spaceVideoSessionsRouter from './spaceVideoSessions';
 
 const router = express.Router();
 
@@ -33,6 +37,10 @@ router.use('/:spaceId', spaceRolesRouter);
 router.use('/:spaceId', spaceItemsRouter);
 router.use('/:spaceId', spaceFoldersRouter);
 router.use('/:spaceId', spaceItemActionsRouter);
+router.use('/:spaceId', spaceTrashRouter);
+router.use('/:spaceId', spaceLikesRouter);
+router.use('/:spaceId', spaceDownloadRouter);
+router.use('/:spaceId', spaceVideoSessionsRouter);
 
 // ── space lifecycle ───────────────────────────────────────────────────────────
 

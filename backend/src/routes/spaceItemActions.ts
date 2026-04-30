@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { Router } from 'express';
 import { authenticate, isMember } from '../middleware';
+import { canWrite, canManageTrash, uniqueDisplayName } from './spaceUtils';
 import {
   bulkMoveSpaceItemsToTrash,
   bulkMoveSpaceItems,
@@ -19,19 +20,7 @@ import { parseSpaceId } from './spacesHelpers';
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
-const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
-const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
-
 type Resolution = 'skip' | 'replace' | 'keep_both';
-
-const uniqueDisplayName = (original: string, taken: Set<string>): string => {
-  if (!taken.has(original)) return original;
-  const ext = path.extname(original);
-  const base = path.basename(original, ext);
-  let n = 1;
-  while (taken.has(`${base}(${n})${ext}`)) n++;
-  return `${base}(${n})${ext}`;
-};
 
 type ConflictPlan = {
   toProcess: { itemId: string; resolvedName: string; needsRename: boolean }[];

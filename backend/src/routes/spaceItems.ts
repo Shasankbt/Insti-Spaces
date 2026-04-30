@@ -1,340 +1,80 @@
-import express, { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
-import sharp from 'sharp';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegStatic from 'ffmpeg-static';
-import archiver from 'archiver';
-import rateLimit from 'express-rate-limit';
-import { authenticate, deltaSync, isMember, upload } from '../middleware';
-import { PAGE, RATE, TRASH, UPLOAD } from '../config';
+import { authenticate, deltaSync, isMember } from '../middleware';
+import { upload } from '../upload';
+import { PAGE, UPLOAD } from '../config';
 import {
-  addSpaceItem,
   getDisplayNamesInFolder,
   getExistingContentHashes,
   getItemById,
-  getItemsByIds,
   getItemsInFolderPage,
   getItemsInFolderSince,
-  getTrashedItems,
   getLikeSummaryForItems,
-  emptySpaceTrash,
-  isLikeableSpaceItemInSpace,
-  likeSpaceItem,
-  unlikeSpaceItem,
-  permanentlyDeleteTrashedSpaceItem,
-  purgeExpiredSpaceTrash,
   renameSpaceItem,
-  restoreSpaceItemFromTrash,
-  getTrashedItemById,
-  setItemFolderId,
 } from '../db/spaceItems';
 import {
-  createFolder,
   getFolderAncestors,
   getFolderByName,
   getFolderById,
-  getFolderSubtreeItems,
-  getFolderSubtreePaths,
-  getTrashedFolders,
 } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
 import { validateContentHashes } from '../validation';
+import { canWrite, uniqueDisplayName, toItemResponse } from './spaceUtils';
+import {
+  isVideoMime,
+  isMediaMime,
+  detectMimeFromMagicBytes,
+  commitStoredMediaFile,
+} from '../utils/media';
 
 const router = Router({ mergeParams: true });
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
-}
-
-const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
-const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
-const isMediaMime = (mimeType: string): boolean => mimeType.startsWith('image/') || mimeType.startsWith('video/');
-const canWrite = (role: string): boolean => ['contributor', 'moderator', 'admin'].includes(role);
-const canManageTrash = (role: string): boolean => ['moderator', 'admin'].includes(role);
-const VIDEO_CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
-
-const shouldSimulateImageUploadInterruption = (files: Express.Multer.File[]): boolean =>
-  files.length >= 10 && files.every((file) => isImageMime(file.mimetype));
-
-type VideoUploadSession = {
-  sessionId: string;
-  spaceId: number;
-  uploaderId: number;
-  folderId: number | null;
-  displayName: string;
-  originalName: string;
-  mimeType: string;
-  sizeBytes: number;
-  contentHash: string | null;
-  totalChunks: number;
-  nextChunkIndex: number;
-  tempDir: string;
-  createdAt: number;
-  simulatedFailed?: boolean;
+const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        await fs.unlink(file.path);
+      } catch (err: unknown) {
+        const fsErr = err as { code?: string };
+        if (fsErr.code !== 'ENOENT') throw err;
+      }
+    }),
+  );
 };
 
-const videoUploadSessions = new Map<string, VideoUploadSession>();
-
-const getVideoSessionTempDir = (spaceId: number, sessionId: string): string =>
-  path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'video-sessions', sessionId);
-
-const getVideoStorageFilename = (sessionId: string, originalName: string): string => {
-  const ext = path.extname(originalName).toLowerCase() || '.mp4';
-  return `${sessionId}${ext}`;
-};
-
-const createVideoUploadSession = async ({
-  spaceId,
-  uploaderId,
-  folderId,
-  displayName,
-  originalName,
-  mimeType,
-  sizeBytes,
-  contentHash,
-}: {
-  spaceId: number;
-  uploaderId: number;
-  folderId: number | null;
-  displayName: string;
-  originalName: string;
-  mimeType: string;
-  sizeBytes: number;
-  contentHash: string | null;
-}): Promise<VideoUploadSession> => {
-  const sessionId = randomUUID();
-  const totalChunks = Math.max(1, Math.ceil(sizeBytes / VIDEO_CHUNK_SIZE_BYTES));
-  const tempDir = getVideoSessionTempDir(spaceId, sessionId);
-
-  await fs.mkdir(tempDir, { recursive: true });
-
-  const session: VideoUploadSession = {
-    sessionId,
-    spaceId,
-    uploaderId,
-    folderId,
-    displayName,
-    originalName,
-    mimeType,
-    sizeBytes,
-    contentHash,
-    totalChunks,
-    nextChunkIndex: 0,
-    tempDir,
-    createdAt: Date.now(),
-  };
-
-  videoUploadSessions.set(sessionId, session);
-  return session;
-};
-
-const getVideoUploadSession = (sessionId: string): VideoUploadSession | null =>
-  videoUploadSessions.get(sessionId) ?? null;
-
-const getVideoChunkPath = (session: VideoUploadSession, chunkIndex: number): string =>
-  path.join(session.tempDir, `chunk-${String(chunkIndex).padStart(6, '0')}.part`);
-
-const uploadLimiter = rateLimit({
-  windowMs: RATE.UPLOAD_WINDOW_MS,
-  limit: RATE.UPLOAD_MAX,
-  message: { error: 'Upload rate limit exceeded, try again in an hour' },
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-});
-
-const toItemResponse = (_spaceId: number, item: {
-  photo_id: string;
-  display_name: string;
-  uploaded_at: Date;
-  mime_type: string;
-  size_bytes: number;
-  folder_id: number | null;
-  trashed_at?: Date | null;
-}) => {
-  const trashedAt = item.trashed_at ?? null;
-  const expiresAt = trashedAt ? new Date(trashedAt.getTime() + TRASH.EXPIRY_DAYS * 24 * 60 * 60 * 1000) : null;
-
-  return {
-    itemId: item.photo_id,
-    displayName: item.display_name,
-    uploadedAt: item.uploaded_at,
-    mimeType: item.mime_type,
-    sizeBytes: item.size_bytes,
-    folderId: item.folder_id,
-    trashedAt,
-    expiresAt,
-  };
-};
-
-const generateVideoThumbnail = async ({
-  inputPath,
-  outputPath,
-}: {
-  inputPath: string;
-  outputPath: string;
-}): Promise<void> =>
-  new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .outputOptions(['-vf', `thumbnail,scale=${UPLOAD.THUMB_PX}:-1`, '-frames:v', '1'])
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run();
-  });
-
-const generateImagePerceptualHash = async (inputPath: string): Promise<string | null> => {
-  try {
-    const { data } = await sharp(inputPath)
-      .rotate()
-      .resize(8, 8, { fit: 'fill' })
-      .greyscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const pixels = [...data];
-    const average = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
-    let bits = '';
-    for (const value of pixels) {
-      bits += value >= average ? '1' : '0';
+const validateUploadedFileSignatures = async (
+  files: Express.Multer.File[],
+): Promise<{ valid: true } | { valid: false; error: string }> => {
+  for (const file of files) {
+    if (!isMediaMime(file.mimetype)) {
+      return { valid: false, error: 'Only image and video files are allowed' };
     }
 
-    let hash = '';
-    for (let i = 0; i < bits.length; i += 4) {
-      hash += Number.parseInt(bits.slice(i, i + 4), 2).toString(16);
-    }
-    return hash;
-  } catch {
-    return null;
-  }
-};
-
-// Remux MP4 so the moov atom is at the front, enabling instant seeking via range requests.
-// Uses stream copy (no re-encode), so it's fast regardless of file size.
-const applyMp4Faststart = async (inputPath: string): Promise<void> => {
-  const tmpPath = `${inputPath}.faststart.tmp`;
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg(inputPath)
-      .outputOptions(['-movflags', '+faststart', '-c', 'copy'])
-      .output(tmpPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run();
-  });
-  await fs.rename(tmpPath, inputPath);
-};
-
-const startsWith = (bytes: Uint8Array, signature: number[]): boolean =>
-  signature.every((value, index) => bytes[index] === value);
-
-const detectMimeFromMagicBytes = (bytes: Uint8Array): string | null => {
-  if (bytes.length < 12) return null;
-
-  if (startsWith(bytes, [0xFF, 0xD8, 0xFF])) return 'image/jpeg';
-  if (startsWith(bytes, [0x89, 0x50, 0x4E, 0x47])) return 'image/png';
-  if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return 'image/gif';
-  if (startsWith(bytes, [0x42, 0x4D])) return 'image/bmp';
-  if (startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
-    return 'image/webp';
-  }
-
-  if ((startsWith(bytes, [0x49, 0x49, 0x2A, 0x00])) || (startsWith(bytes, [0x4D, 0x4D, 0x00, 0x2A]))) {
-    return 'image/tiff';
-  }
-
-  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
-    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'avif'].includes(brand)) {
-      return brand === 'avif' ? 'image/avif' : 'image/heic';
-    }
-    return 'video/mp4';
-  }
-
-  if (startsWith(bytes, [0x1A, 0x45, 0xDF, 0xA3])) return 'video/webm';
-  return null;
-};
-
-const uniqueDisplayName = (original: string, taken: Set<string>): string => {
-  if (!taken.has(original)) return original;
-  const ext = path.extname(original);
-  const base = path.basename(original, ext);
-  let n = 1;
-  while (taken.has(`${base}(${n})${ext}`)) n++;
-  return `${base}(${n})${ext}`;
-};
-
-const commitStoredMediaFile = async ({
-  inputPath,
-  storageFilename,
-  spaceId,
-  folderId,
-  displayName,
-  contentHash,
-  uploaderId,
-  sizeBytes,
-  mimeType,
-}: {
-  inputPath: string;
-  storageFilename: string;
-  spaceId: number;
-  folderId: number | null;
-  displayName: string;
-  contentHash: string | null;
-  uploaderId: number;
-  sizeBytes: number;
-  mimeType: string;
-}) => {
-  const uploadsRoot = path.resolve(UPLOADS_ROOT);
-  const originalsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'originals');
-  const thumbnailDirAbs = path.join(uploadsRoot, 'spaces', String(spaceId), 'thumbnails');
-  await fs.mkdir(originalsDir, { recursive: true });
-  await fs.mkdir(thumbnailDirAbs, { recursive: true });
-
-  const finalOriginalAbsPath = path.join(originalsDir, storageFilename);
-  if (path.resolve(inputPath) !== finalOriginalAbsPath) {
+    const handle = await fs.open(file.path, 'r');
+    const header = Buffer.alloc(64);
     try {
-      await fs.rename(inputPath, finalOriginalAbsPath);
-    } catch {
-      await fs.copyFile(inputPath, finalOriginalAbsPath);
-      await fs.unlink(inputPath);
+      await handle.read(header, 0, header.length, 0);
+    } finally {
+      await handle.close();
     }
-  }
 
-  const filePath = path.join('spaces', String(spaceId), 'originals', storageFilename);
-  const thumbnailExt = isVideoMime(mimeType) ? '.jpg' : '.webp';
-  const thumbnailFilename = `${path.parse(storageFilename).name}${thumbnailExt}`;
-  const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
-
-  const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
-  let perceptualHash: string | null = null;
-  if (isVideoMime(mimeType)) {
-    await generateVideoThumbnail({ inputPath: finalOriginalAbsPath, outputPath: thumbnailAbsPath });
-    if (mimeType === 'video/mp4') {
-      await applyMp4Faststart(finalOriginalAbsPath);
+    const detectedMime = detectMimeFromMagicBytes(header);
+    if (!detectedMime || !isMediaMime(detectedMime)) {
+      return { valid: false, error: `Unsupported file content for ${file.originalname}` };
     }
-  } else {
-    perceptualHash = await generateImagePerceptualHash(finalOriginalAbsPath);
-    await sharp(finalOriginalAbsPath)
-      .resize(UPLOAD.THUMB_PX, UPLOAD.THUMB_PX, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: UPLOAD.THUMB_QUALITY })
-      .toFile(thumbnailAbsPath);
-  }
 
-  return addSpaceItem({
-    spaceId,
-    uploaderId,
-    folderId,
-    filePath,
-    thumbnailPath,
-    contentHash,
-    perceptualHash,
-    mimeType,
-    sizeBytes,
-    displayName,
-    capturedAt: null,
-  });
+    const declaredIsVideo = isVideoMime(file.mimetype);
+    const detectedIsVideo = isVideoMime(detectedMime);
+    if (declaredIsVideo !== detectedIsVideo) {
+      return { valid: false, error: `MIME type mismatch for ${file.originalname}` };
+    }
+
+    file.mimetype = detectedMime;
+  }
+  return { valid: true };
 };
 
 const commitUploadedMediaFile = async ({
@@ -364,104 +104,8 @@ const commitUploadedMediaFile = async ({
     mimeType: file.mimetype,
   });
 
-const parseVideoChunkIndex = (value: unknown): number | null => {
-  const parsed = typeof value === 'string' ? Number(value) : Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-};
-
-const finalizeVideoUploadSession = async (session: VideoUploadSession) => {
-  const storageFilename = getVideoStorageFilename(session.sessionId, session.originalName);
-  const finalChunkPath = path.join(session.tempDir, 'assembled.tmp');
-  const chunkPaths: string[] = [];
-
-  for (let i = 0; i < session.totalChunks; i++) {
-    const chunkPath = getVideoChunkPath(session, i);
-    const chunk = await fs.readFile(chunkPath);
-    chunkPaths.push(chunkPath);
-    await fs.appendFile(finalChunkPath, chunk);
-  }
-
-  for (const chunkPath of chunkPaths) {
-    try {
-      await fs.unlink(chunkPath);
-    } catch {
-      // best-effort cleanup
-    }
-  }
-
-  const item = await commitStoredMediaFile({
-    inputPath: finalChunkPath,
-    storageFilename,
-    spaceId: session.spaceId,
-    folderId: session.folderId,
-    displayName: session.displayName,
-    contentHash: session.contentHash,
-    uploaderId: session.uploaderId,
-    sizeBytes: session.sizeBytes,
-    mimeType: session.mimeType,
-  });
-
-  videoUploadSessions.delete(session.sessionId);
-  try {
-    await fs.rm(session.tempDir, { recursive: true, force: true });
-  } catch {
-    // ignore cleanup failures
-  }
-
-  return item;
-};
-
-const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
-  await Promise.all(
-    files.map(async (file) => {
-      try {
-        await fs.unlink(file.path);
-      } catch (err: unknown) {
-        const fsErr = err as { code?: string };
-        if (fsErr.code !== 'ENOENT') {
-          throw err;
-        }
-      }
-    }),
-  );
-};
-
-const validateUploadedFileSignatures = async (
-  files: Express.Multer.File[],
-): Promise<{ valid: true } | { valid: false; error: string }> => {
-  for (const file of files) {
-    if (!isMediaMime(file.mimetype)) {
-      return { valid: false, error: 'Only image and video files are allowed' };
-    }
-
-    const handle = await fs.open(file.path, 'r');
-    const header = Buffer.alloc(64);
-    try {
-      await handle.read(header, 0, header.length, 0);
-    } finally {
-      await handle.close();
-    }
-
-    const detectedMime = detectMimeFromMagicBytes(header);
-
-    if (!detectedMime || !isMediaMime(detectedMime)) {
-      return { valid: false, error: `Unsupported file content for ${file.originalname}` };
-    }
-
-    const declaredIsVideo = isVideoMime(file.mimetype);
-    const detectedIsVideo = isVideoMime(detectedMime);
-    if (declaredIsVideo !== detectedIsVideo) {
-      return { valid: false, error: `MIME type mismatch for ${file.originalname}` };
-    }
-
-    file.mimetype = detectedMime;
-  }
-
-  return { valid: true };
-};
-
 const handleUpload = async (req: Request, res: Response) => {
-  console.log("Handling upload for user", req.user.id, "with member role", req.member.role);
+  console.log('Handling upload for user', req.user.id, 'with member role', req.member.role);
   if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
     return;
@@ -493,7 +137,6 @@ const handleUpload = async (req: Request, res: Response) => {
         res.status(400).json({ error: parsedHashes.error });
         return;
       }
-
       contentHashes = parsedHashes.data;
       if (contentHashes.length !== files.length) {
         await cleanupUploadedFiles(files);
@@ -507,10 +150,8 @@ const handleUpload = async (req: Request, res: Response) => {
     }
   }
 
-  // optional folder_id — if omitted, item lands at space root
   const rawFolderId = (req.body as { folder_id?: string }).folder_id;
   let folderId: number | null = null;
-
   if (rawFolderId != null) {
     folderId = Number(rawFolderId);
     if (!Number.isFinite(folderId)) {
@@ -527,7 +168,7 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 
   const uploadSessionId = randomUUID();
-  const simulateInterrupt = false;// shouldSimulateImageUploadInterruption(files);  
+
   try {
     const existingNames = await getDisplayNamesInFolder({ spaceId, folderId });
     const takenNames = new Set(existingNames);
@@ -537,44 +178,17 @@ const handleUpload = async (req: Request, res: Response) => {
       return name;
     });
 
-    if (simulateInterrupt) {
-      const uploadedCount = 5;
-      const pendingFiles = files.slice(uploadedCount);
-
-      for (let i = 0; i < uploadedCount; i++) {
-        await commitUploadedMediaFile({
-          file: files[i],
-          spaceId,
-          folderId,
-          displayName: displayNames[i],
-          contentHash: contentHashes[i] ?? null,
-          uploaderId: req.user.id,
-        });
-      }
-
-      await cleanupUploadedFiles(pendingFiles);
-      res.status(409).json({
-        recoverable: true,
-        error: `Upload paused after ${uploadedCount} images. Click resume to upload the remaining ${pendingFiles.length}.`,
-        uploadSessionId,
-        uploadedCount,
-        totalCount: files.length,
-        pendingCount: pendingFiles.length,
-      });
-      return;
-    }
-
     const items = await Promise.all(
-      files.map(async (file, fileIndex) => {
-        return commitUploadedMediaFile({
+      files.map((file, fileIndex) =>
+        commitUploadedMediaFile({
           file,
           spaceId,
           folderId,
           displayName: displayNames[fileIndex],
           contentHash: contentHashes[fileIndex] ?? null,
           uploaderId: req.user.id,
-        });
-      }),
+        }),
+      ),
     );
     res.status(201).json({ items, uploadSessionId, uploadedCount: items.length, totalCount: files.length });
   } catch (err: unknown) {
@@ -584,16 +198,7 @@ const handleUpload = async (req: Request, res: Response) => {
   }
 };
 
-// GET /spaces/:spaceId/explorer?path=FolderA/SubfolderB
-//
-// Translates a human-readable URL path (e.g. "FolderA/SubfolderB") into folder
-// metadata (id, name, parentId) and breadcrumbs. Does NOT return file items.
-//
-// Called by the frontend whenever the user navigates into a folder. The folder
-// names in the URL are resolved one segment at a time against the DB, so the
-// response gives the integer folder_id needed to then call GET /items?folder_id=<n>.
-//
-// Returns: { currentFolder: { id, name, parentId } | null, breadcrumbs: [...] }
+// GET /spaces/:spaceId/explorer
 router.get('/explorer', authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
@@ -621,7 +226,6 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
     }
 
     const breadcrumbs = folderId != null ? await getFolderAncestors(folderId) : [];
-
     const toFolder = (f: { id: number; name: string; parent_id: number | null }) => ({
       id: f.id,
       name: f.name,
@@ -638,9 +242,7 @@ router.get('/explorer', authenticate, isMember, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/items?folder_id=<n>&since=<iso>&cursor=<b64>&limit=<n>
-// Initial/load-more: since=EPOCH or cursor present → cursor pagination
-// Delta sync: since>EPOCH, no cursor → return changed items only
+// GET /spaces/:spaceId/items
 router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
   const spaceId = parseSpaceId(req);
   if (!spaceId) {
@@ -709,8 +311,7 @@ router.get('/items', authenticate, isMember, deltaSync, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/items/:itemId/file — serve item file by ID (no path exposed to client)
-// Accepts ?t=<token> so native <video> range requests work.
+// GET /spaces/:spaceId/items/:itemId/file
 router.get('/items/:itemId/file', (req, res, next) => {
   if (!req.headers.authorization && req.query.t) {
     req.headers.authorization = `Bearer ${req.query.t as string}`;
@@ -731,14 +332,12 @@ router.get('/items/:itemId/file', (req, res, next) => {
       res.status(404).json({ error: 'Item not found' });
       return;
     }
-
     const uploadsRoot = path.resolve(UPLOADS_ROOT);
     const absolutePath = path.resolve(uploadsRoot, item.file_path);
     if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
       res.status(400).json({ error: 'Invalid file path' });
       return;
     }
-
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.sendFile(absolutePath, (err) => {
       if (err && !res.headersSent) res.status(404).json({ error: 'File not found' });
@@ -749,7 +348,7 @@ router.get('/items/:itemId/file', (req, res, next) => {
   }
 });
 
-// GET /spaces/:spaceId/items/:itemId/thumbnail — serve item thumbnail by ID
+// GET /spaces/:spaceId/items/:itemId/thumbnail
 router.get('/items/:itemId/thumbnail', (req, res, next) => {
   if (!req.headers.authorization && req.query.t) {
     req.headers.authorization = `Bearer ${req.query.t as string}`;
@@ -770,14 +369,12 @@ router.get('/items/:itemId/thumbnail', (req, res, next) => {
       res.status(404).json({ error: 'Item not found' });
       return;
     }
-
     const uploadsRoot = path.resolve(UPLOADS_ROOT);
     const absolutePath = path.resolve(uploadsRoot, item.thumbnail_path);
     if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
       res.status(400).json({ error: 'Invalid file path' });
       return;
     }
-
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.sendFile(absolutePath, (err) => {
       if (err && !res.headersSent) res.status(404).json({ error: 'Thumbnail not found' });
@@ -788,155 +385,10 @@ router.get('/items/:itemId/thumbnail', (req, res, next) => {
   }
 });
 
-// POST /spaces/:spaceId/upload — upload photos to a space (contributor+)
-router.post('/upload', authenticate, isMember, uploadLimiter, upload.array('items', UPLOAD.MAX_FILES), handleUpload);
+// POST /spaces/:spaceId/upload
+router.post('/upload', authenticate, isMember, upload.array('items', UPLOAD.MAX_FILES), handleUpload);
 
-router.post('/video-sessions', authenticate, isMember, uploadLimiter, express.json(), async (req, res) => {
-  if (!canWrite(req.member.role)) {
-    res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
-    return;
-  }
-
-  const body = req.body as {
-    displayName?: string;
-    originalName?: string;
-    mimeType?: string;
-    sizeBytes?: number;
-    contentHash?: string | null;
-    folderId?: number | null;
-  };
-
-  if (!body.displayName || !body.originalName || !body.mimeType || !Number.isFinite(Number(body.sizeBytes))) {
-    res.status(400).json({ error: 'Invalid video session payload' });
-    return;
-  }
-
-  const spaceId = req.member.spaceid;
-  const folderId = body.folderId ?? null;
-  if (folderId != null) {
-    const folder = await getFolderById(folderId);
-    if (!folder || folder.space_id !== spaceId || folder.deleted) {
-      res.status(404).json({ error: 'Folder not found in this space' });
-      return;
-    }
-  }
-
-  const session = await createVideoUploadSession({
-    spaceId,
-    uploaderId: req.user.id,
-    folderId,
-    displayName: body.displayName,
-    originalName: body.originalName,
-    mimeType: body.mimeType,
-    sizeBytes: Number(body.sizeBytes),
-    contentHash: body.contentHash ?? null,
-  });
-
-  res.status(201).json({
-    sessionId: session.sessionId,
-    nextChunkIndex: session.nextChunkIndex,
-    totalChunks: session.totalChunks,
-    chunkSizeBytes: VIDEO_CHUNK_SIZE_BYTES,
-  });
-});
-
-router.post(
-  '/video-sessions/:sessionId/chunks',
-  authenticate,
-  isMember,
-  uploadLimiter,
-  express.raw({ type: 'application/octet-stream', limit: `${VIDEO_CHUNK_SIZE_BYTES + 1024 * 1024}b` }),
-  async (req, res) => {
-    if (!canWrite(req.member.role)) {
-      res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
-      return;
-    }
-
-    const session = getVideoUploadSession(String(req.params.sessionId));
-    if (!session || session.spaceId !== req.member.spaceid) {
-      res.status(404).json({ error: 'Video upload session not found' });
-      return;
-    }
-
-    const chunkIndex = parseVideoChunkIndex(req.header('x-chunk-index'));
-    if (chunkIndex == null) {
-      res.status(400).json({ error: 'Invalid chunk index' });
-      return;
-    }
-
-    if (chunkIndex !== session.nextChunkIndex) {
-      res.status(409).json({
-        error: 'Resume from the next missing chunk',
-        nextChunkIndex: session.nextChunkIndex,
-        totalChunks: session.totalChunks,
-      });
-      return;
-    }
-
-    const chunk = req.body as Buffer | undefined;
-    if (!chunk || chunk.length === 0) {
-      res.status(400).json({ error: 'Empty chunk payload' });
-      return;
-    }
-
-      // Simulation: for testing, fail once on chunk index 5 for videos with >= 10 chunks
-      if (session.totalChunks >= 10 && chunkIndex === 5 && !session.simulatedFailed) {
-        session.simulatedFailed = true;
-        console.log(`[video-sim] Simulating failure for session ${session.sessionId} at chunk ${chunkIndex}`);
-        // don't write the chunk — simulate a recoverable server-side pause
-        res.status(409).json({
-          recoverable: true,
-          error: `Simulated server interruption at chunk ${chunkIndex}`,
-          sessionId: session.sessionId,
-          nextChunkIndex: session.nextChunkIndex,
-          totalChunks: session.totalChunks,
-        });
-        return;
-      }
-
-    await fs.writeFile(getVideoChunkPath(session, chunkIndex), chunk);
-    session.nextChunkIndex += 1;
-
-    res.status(200).json({
-      sessionId: session.sessionId,
-      nextChunkIndex: session.nextChunkIndex,
-      totalChunks: session.totalChunks,
-      complete: session.nextChunkIndex >= session.totalChunks,
-    });
-  },
-);
-
-router.post('/video-sessions/:sessionId/complete', authenticate, isMember, uploadLimiter, express.json(), async (req, res) => {
-  if (!canWrite(req.member.role)) {
-    res.status(403).json({ error: 'Only contributors, moderators, and admins can upload items' });
-    return;
-  }
-
-  const session = getVideoUploadSession(String(req.params.sessionId));
-  if (!session || session.spaceId !== req.member.spaceid) {
-    res.status(404).json({ error: 'Video upload session not found' });
-    return;
-  }
-
-  if (session.nextChunkIndex < session.totalChunks) {
-    res.status(409).json({
-      error: 'Upload incomplete',
-      nextChunkIndex: session.nextChunkIndex,
-      totalChunks: session.totalChunks,
-    });
-    return;
-  }
-
-  try {
-    const item = await finalizeVideoUploadSession(session);
-    res.status(201).json({ item });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// POST /spaces/:spaceId/items/hash-check — return already-existing content hashes in this space
+// POST /spaces/:spaceId/items/hash-check
 router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
   const spaceId = parseSpaceId(req);
   const hashes = (req.body as { hashes?: unknown }).hashes;
@@ -945,17 +397,13 @@ router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
     res.status(400).json({ error: 'Invalid spaceId' });
     return;
   }
-
   if (!Array.isArray(hashes) || !hashes.every((value) => typeof value === 'string')) {
     res.status(400).json({ error: 'hashes must be a string array' });
     return;
   }
 
   try {
-    const existingHashes = await getExistingContentHashes({
-      spaceId,
-      hashes,
-    });
+    const existingHashes = await getExistingContentHashes({ spaceId, hashes });
     res.json({ existingHashes });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
@@ -963,266 +411,7 @@ router.post('/items/hash-check', authenticate, isMember, async (req, res) => {
   }
 });
 
-// GET /spaces/:spaceId/trash?limit=50&offset=0 — paginated trash list
-router.get('/trash', authenticate, isMember, async (req, res) => {
-  const spaceId = parseSpaceId(req);
-  if (!spaceId) {
-    res.status(400).json({ error: 'Invalid spaceId' });
-    return;
-  }
-
-  const limit = Math.min(Number(req.query.limit) || PAGE.TRASH_DEFAULT, PAGE.TRASH_MAX);
-  const offset = Math.max(Number(req.query.offset) || 0, 0);
-
-  try {
-    await purgeExpiredSpaceTrash({ spaceId });
-    const [{ rows, hasMore }, folders] = await Promise.all([
-      getTrashedItems({ spaceId, limit, offset }),
-      getTrashedFolders({ spaceId }),
-    ]);
-    res.json({
-      items: rows.map((item) => toItemResponse(spaceId, item)),
-      folders: folders.map((f) => ({
-        folderId: f.id,
-        name: f.name,
-        trashedAt: f.trashed_at,
-        expiresAt: f.expires_at,
-      })),
-      hasMore,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// POST /spaces/:spaceId/trash/:itemId/restore — restore an item to its original folder
-router.post('/trash/:itemId/restore', authenticate, isMember, async (req, res) => {
-  if (!canWrite(req.member.role)) {
-    res.status(403).json({ error: 'Only contributors, moderators, and admins can restore trash' });
-    return;
-  }
-
-  const spaceId = parseSpaceId(req);
-  const itemIdRaw = req.params.itemId;
-  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
-
-  if (!spaceId || !itemId) {
-    res.status(400).json({ error: 'Invalid spaceId or itemId' });
-    return;
-  }
-
-  try {
-    const trashedItem = await getTrashedItemById({ spaceId, itemId });
-    if (!trashedItem) {
-      res.status(404).json({ error: 'Item not found in trash' });
-      return;
-    }
-
-    // Recreate deleted parent folder chain if needed
-    if (trashedItem.folder_id != null) {
-      const folder = await getFolderById(trashedItem.folder_id);
-      if (!folder || folder.deleted) {
-        const ancestors = folder
-          ? await getFolderAncestors(trashedItem.folder_id)
-          : [];
-        const chain = folder ? [...ancestors, folder] : ancestors;
-
-        let currentParentId: number | null = null;
-        for (const f of chain) {
-          if (!f.deleted) {
-            currentParentId = f.id;
-            continue;
-          }
-          const existing = await getFolderByName({ spaceId, name: f.name, parentId: currentParentId });
-          if (existing && !existing.deleted) {
-            currentParentId = existing.id;
-          } else {
-            const newFolder = await createFolder({ spaceId, createdBy: req.user.id, name: f.name, parentId: currentParentId });
-            currentParentId = newFolder.id;
-          }
-        }
-
-        if (currentParentId !== trashedItem.folder_id) {
-          await setItemFolderId({ spaceId, itemId, folderId: currentParentId });
-        }
-      }
-    }
-
-    const item = await restoreSpaceItemFromTrash({ spaceId, itemId });
-    if (!item) {
-      res.status(404).json({ error: 'Item not found in trash' });
-      return;
-    }
-    res.json({ item: toItemResponse(spaceId, item) });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// DELETE /spaces/:spaceId/trash/:itemId — permanently delete one trashed item
-router.delete('/trash/:itemId', authenticate, isMember, async (req, res) => {
-  if (!canManageTrash(req.member.role)) {
-    res.status(403).json({ error: 'Only admins and moderators can permanently delete trash' });
-    return;
-  }
-
-  const spaceId = parseSpaceId(req);
-  const itemIdRaw = req.params.itemId;
-  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
-
-  if (!spaceId || !itemId) {
-    res.status(400).json({ error: 'Invalid spaceId or itemId' });
-    return;
-  }
-
-  try {
-    const deleted = await permanentlyDeleteTrashedSpaceItem({ spaceId, itemId });
-    if (!deleted) {
-      res.status(404).json({ error: 'Item not found in trash' });
-      return;
-    }
-    res.json({ message: 'Item permanently deleted' });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// DELETE /spaces/:spaceId/trash — permanently delete all trashed items
-router.delete('/trash', authenticate, isMember, async (req, res) => {
-  if (!canManageTrash(req.member.role)) {
-    res.status(403).json({ error: 'Only admins and moderators can empty trash' });
-    return;
-  }
-
-  const spaceId = parseSpaceId(req);
-  if (!spaceId) {
-    res.status(400).json({ error: 'Invalid spaceId' });
-    return;
-  }
-
-  try {
-    const deletedCount = await emptySpaceTrash({ spaceId });
-    res.json({ message: 'Trash emptied', deletedCount });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// POST /spaces/:spaceId/download — stream a ZIP of selected items and/or folders
-router.post('/download', authenticate, isMember, async (req, res) => {
-  const spaceId = parseSpaceId(req);
-  if (!spaceId) {
-    res.status(400).json({ error: 'Invalid spaceId' });
-    return;
-  }
-
-  const { itemIds = [], folderIds = [] } = req.body as {
-    itemIds?: string[];
-    folderIds?: number[];
-  };
-
-  if (itemIds.length === 0 && folderIds.length === 0) {
-    res.status(400).json({ error: 'No items or folders selected' });
-    return;
-  }
-
-  try {
-    const [directItems, folderItems, folderPaths] = await Promise.all([
-      getItemsByIds({ spaceId, itemIds }),
-      getFolderSubtreeItems({ spaceId, folderIds }),
-      getFolderSubtreePaths({ spaceId, folderIds }),
-    ]);
-
-    const toZip: Array<{ filePath: string; zipPath: string }> = [
-      ...directItems.map((item) => ({
-        filePath: item.file_path,
-        zipPath: item.display_name,
-      })),
-      ...folderItems.map((item) => ({
-        filePath: item.file_path,
-        zipPath: `${item.folder_path}/${item.display_name}`,
-      })),
-    ];
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="download.zip"');
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.pipe(res);
-    for (const { folder_path } of folderPaths) {
-      archive.append(Buffer.alloc(0), { name: `${folder_path}/` });
-    }
-    for (const entry of toZip) {
-      archive.file(path.resolve(UPLOADS_ROOT, entry.filePath), { name: entry.zipPath });
-    }
-    await archive.finalize();
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// POST /spaces/:spaceId/items/:itemId/like — like a media item
-router.post('/items/:itemId/like', authenticate, isMember, async (req, res) => {
-  const spaceId = parseSpaceId(req);
-  const itemIdRaw = req.params.itemId;
-  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
-
-  if (!spaceId || !itemId) {
-    res.status(400).json({ error: 'Invalid spaceId or itemId' });
-    return;
-  }
-
-  try {
-    const exists = await isLikeableSpaceItemInSpace({ itemId, spaceId });
-    if (!exists) {
-      res.status(404).json({ error: 'Item not found in this space' });
-      return;
-    }
-
-    await likeSpaceItem({ itemId, userId: req.user.id });
-    const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
-    const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
-    res.json(likeInfo);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// DELETE /spaces/:spaceId/items/:itemId/like — unlike a media item
-router.delete('/items/:itemId/like', authenticate, isMember, async (req, res) => {
-  const spaceId = parseSpaceId(req);
-  const itemIdRaw = req.params.itemId;
-  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
-
-  if (!spaceId || !itemId) {
-    res.status(400).json({ error: 'Invalid spaceId or itemId' });
-    return;
-  }
-
-  try {
-    const exists = await isLikeableSpaceItemInSpace({ itemId, spaceId });
-    if (!exists) {
-      res.status(404).json({ error: 'Item not found in this space' });
-      return;
-    }
-
-    await unlikeSpaceItem({ itemId, userId: req.user.id });
-    const summary = await getLikeSummaryForItems({ itemIds: [itemId], userId: req.user.id });
-    const likeInfo = summary.get(itemId) ?? { likeCount: 0, likedByMe: false };
-    res.json(likeInfo);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// PATCH /spaces/:spaceId/items/:itemId/rename — rename an item (contributor+)
+// PATCH /spaces/:spaceId/items/:itemId/rename
 router.patch('/items/:itemId/rename', authenticate, isMember, async (req, res) => {
   if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can rename items' });
@@ -1230,8 +419,7 @@ router.patch('/items/:itemId/rename', authenticate, isMember, async (req, res) =
   }
 
   const spaceId = parseSpaceId(req);
-  const itemIdRaw = req.params.itemId;
-  const itemId = typeof itemIdRaw === 'string' ? itemIdRaw : null;
+  const itemId = typeof req.params.itemId === 'string' ? req.params.itemId : null;
   const displayNameRaw = (req.body as { displayName?: unknown }).displayName;
   const displayName = typeof displayNameRaw === 'string' ? displayNameRaw.trim() : '';
 
