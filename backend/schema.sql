@@ -226,3 +226,21 @@ CREATE INDEX idx_space_items_media_path ON space_items (space_id, file_path, thu
 CREATE INDEX idx_role_requests_spaceid_status ON role_requests (space_id, status) WHERE deleted = false;
 CREATE INDEX idx_users_username_pattern ON users (username varchar_pattern_ops);
 CREATE INDEX idx_friend_requests_users ON friend_requests (from_user_id, to_user_id) WHERE status = 'pending';
+
+CREATE TABLE video_upload_sessions (
+  id            UUID         PRIMARY KEY,
+  space_id      INT          NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  uploader_id   INT          NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+  folder_id     INT          REFERENCES space_folders(id)   ON DELETE SET NULL,
+  display_name  TEXT         NOT NULL,
+  original_name TEXT         NOT NULL,
+  mime_type     TEXT         NOT NULL,
+  size_bytes    BIGINT       NOT NULL,
+  content_hash  TEXT,
+  total_chunks  INT          NOT NULL,
+  next_chunk_index INT       NOT NULL DEFAULT 0,
+  temp_dir      TEXT         NOT NULL,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  expires_at    TIMESTAMPTZ  NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+);
+CREATE INDEX ON video_upload_sessions (expires_at);

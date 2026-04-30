@@ -9,6 +9,7 @@ DROP TRIGGER IF EXISTS space_items_updated_at ON space_items;
 DROP TABLE IF EXISTS role_requests CASCADE;
 DROP TABLE IF EXISTS space_posts CASCADE;
 DROP TABLE IF EXISTS invite_links CASCADE;
+DROP TABLE IF EXISTS video_upload_sessions CASCADE;
 DROP TABLE IF EXISTS following CASCADE;
 DROP TABLE IF EXISTS space_item_likes CASCADE;
 DROP TABLE IF EXISTS space_items CASCADE;
