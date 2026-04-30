@@ -1,10 +1,6 @@
 import path from 'path';
-import fs from 'fs/promises';
-import { addSpaceItem } from '../db/spaceItems';
 import { mediaPool } from '../workers/mediaPool';
 import type { MediaTaskResult } from '../workers/mediaWorker';
-
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
 export const isVideoMime = (mimeType: string): boolean => mimeType.startsWith('video/');
 export const isImageMime = (mimeType: string): boolean => mimeType.startsWith('image/');
@@ -62,6 +58,16 @@ export const generateVideoThumbnail = async ({
   await mediaPool.run({ type: 'video-thumbnail', inputPath, outputPath });
 };
 
+export const generateImageThumbnail = async ({
+  inputPath,
+  outputPath,
+}: {
+  inputPath: string;
+  outputPath: string;
+}): Promise<void> => {
+  await mediaPool.run({ type: 'image-thumbnail', inputPath, outputPath });
+};
+
 export const generateImagePerceptualHash = async (inputPath: string): Promise<string | null> => {
   const result = (await mediaPool.run({ type: 'image-phash', inputPath })) as Extract<
     MediaTaskResult,
@@ -72,75 +78,6 @@ export const generateImagePerceptualHash = async (inputPath: string): Promise<st
 
 export const applyMp4Faststart = async (inputPath: string): Promise<void> => {
   await mediaPool.run({ type: 'video-faststart', inputPath });
-};
-
-export const commitStoredMediaFile = async ({
-  inputPath,
-  storageFilename,
-  spaceId,
-  folderId,
-  displayName,
-  contentHash,
-  uploaderId,
-  sizeBytes,
-  mimeType,
-}: {
-  inputPath: string;
-  storageFilename: string;
-  spaceId: number;
-  folderId: number | null;
-  displayName: string;
-  contentHash: string | null;
-  uploaderId: number;
-  sizeBytes: number;
-  mimeType: string;
-}) => {
-  const uploadsRoot = path.resolve(UPLOADS_ROOT);
-  const originalsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'originals');
-  const thumbnailDirAbs = path.join(uploadsRoot, 'spaces', String(spaceId), 'thumbnails');
-  await fs.mkdir(originalsDir, { recursive: true });
-  await fs.mkdir(thumbnailDirAbs, { recursive: true });
-
-  const finalOriginalAbsPath = path.join(originalsDir, storageFilename);
-  if (path.resolve(inputPath) !== finalOriginalAbsPath) {
-    try {
-      await fs.rename(inputPath, finalOriginalAbsPath);
-    } catch {
-      await fs.copyFile(inputPath, finalOriginalAbsPath);
-      await fs.unlink(inputPath);
-    }
-  }
-
-  const filePath = path.join('spaces', String(spaceId), 'originals', storageFilename);
-  const thumbnailExt = isVideoMime(mimeType) ? '.jpg' : '.webp';
-  const thumbnailFilename = `${path.parse(storageFilename).name}${thumbnailExt}`;
-  const thumbnailPath = path.join('spaces', String(spaceId), 'thumbnails', thumbnailFilename);
-  const thumbnailAbsPath = path.join(thumbnailDirAbs, thumbnailFilename);
-
-  let perceptualHash: string | null = null;
-  if (isVideoMime(mimeType)) {
-    await generateVideoThumbnail({ inputPath: finalOriginalAbsPath, outputPath: thumbnailAbsPath });
-    if (mimeType === 'video/mp4') {
-      await applyMp4Faststart(finalOriginalAbsPath);
-    }
-  } else {
-    perceptualHash = await generateImagePerceptualHash(finalOriginalAbsPath);
-    await mediaPool.run({ type: 'image-thumbnail', inputPath: finalOriginalAbsPath, outputPath: thumbnailAbsPath });
-  }
-
-  return addSpaceItem({
-    spaceId,
-    uploaderId,
-    folderId,
-    filePath,
-    thumbnailPath,
-    contentHash,
-    perceptualHash,
-    mimeType,
-    sizeBytes,
-    displayName,
-    capturedAt: null,
-  });
 };
 
 export const toMediaUrl = (spaceId: number, storagePath: string): string => {

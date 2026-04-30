@@ -3,12 +3,11 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { UPLOAD } from './config';
+import { storage } from './storage';
 
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
-
-const storage: StorageEngine = multer.diskStorage({
+const diskStorage: StorageEngine = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const dest = path.join(UPLOADS_ROOT, 'spaces', String(req.params.spaceId), 'originals');
+    const dest = path.join(storage.root, 'spaces', String(req.params.spaceId), 'originals');
     console.log('[Multer] Writing to:', dest);
     try {
       fs.mkdirSync(dest, { recursive: true });
@@ -25,6 +24,6 @@ const storage: StorageEngine = multer.diskStorage({
 });
 
 export const upload = multer({
-  storage,
+  storage: diskStorage,
   limits: { fileSize: UPLOAD.MAX_FILE_BYTES },
 });

@@ -1,13 +1,12 @@
-import path from 'path';
 import archiver from 'archiver';
 import { Router } from 'express';
 import { authenticate, isMember } from '../middleware';
 import { parseSpaceId } from './spacesHelpers';
 import { getItemsByIds } from '../db/spaceItems';
 import { getFolderSubtreeItems, getFolderSubtreePaths } from '../db/spaceFolders';
+import { storage } from '../storage';
 
 const router = Router({ mergeParams: true });
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
 // POST /spaces/:spaceId/download
 router.post('/download', authenticate, isMember, async (req, res) => {
@@ -51,7 +50,7 @@ router.post('/download', authenticate, isMember, async (req, res) => {
       archive.append(Buffer.alloc(0), { name: `${folder_path}/` });
     }
     for (const entry of toZip) {
-      archive.file(path.resolve(UPLOADS_ROOT, entry.filePath), { name: entry.zipPath });
+      archive.file(storage.resolveAbsolute(entry.filePath), { name: entry.zipPath });
     }
     await archive.finalize();
   } catch (err: unknown) {

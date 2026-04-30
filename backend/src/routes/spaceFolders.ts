@@ -1,6 +1,3 @@
-import path from 'path';
-import fs from 'fs/promises';
-import crypto from 'crypto';
 import { Router } from 'express';
 import { authenticate, isMember, deltaSync } from '../middleware';
 import {
@@ -17,17 +14,15 @@ import {
   getTrashedFolderDirectChildren,
   prepareRestoreFolder,
 } from '../db/spaceFolders';
-import { getItemsInFolder, addSpaceItem } from '../db/spaceItems';
-
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
-
+import { getItemsInFolder } from '../db/spaceItems';
 import { canWrite, canManageTrash } from './spaceUtils';
+import { spaceItemService } from '../services';
 
 const router = Router({ mergeParams: true });
 
 // POST /spaces/:spaceId/folders — create a folder (contributor+)
 router.post('/folders', authenticate, isMember, async (req, res) => {
-  if (!['contributor', 'moderator', 'admin'].includes(req.member.role)) {
+  if (!canWrite(req.member.role)) {
     res.status(403).json({ error: 'Only contributors, moderators, and admins can create folders' });
     return;
   }
@@ -183,12 +178,6 @@ router.post('/folders/:folderId/copy', authenticate, isMember, async (req, res) 
       }
     }
 
-    const uploadsRoot = path.resolve(UPLOADS_ROOT);
-    const originalsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'originals');
-    const thumbsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'thumbnails');
-    await fs.mkdir(originalsDir, { recursive: true });
-    await fs.mkdir(thumbsDir, { recursive: true });
-
     let totalItems = 0;
 
     const copySubtree = async (srcFolderId: number, destParentId: number | null): Promise<void> => {
@@ -205,27 +194,16 @@ router.post('/folders/:folderId/copy', authenticate, isMember, async (req, res) 
       const newFolder = await createFolder({ spaceId, createdBy: req.user.id, name: newName, parentId: destParentId });
 
       const items = await getItemsInFolder({ spaceId, folderId: srcFolderId });
-      await Promise.all(items.map(async (item) => {
-        const newId = crypto.randomUUID();
-        const fileExt = path.extname(item.file_path);
-        const thumbExt = path.extname(item.thumbnail_path);
-        await fs.copyFile(path.resolve(uploadsRoot, item.file_path), path.join(originalsDir, `${newId}${fileExt}`));
-        await fs.copyFile(path.resolve(uploadsRoot, item.thumbnail_path), path.join(thumbsDir, `${newId}${thumbExt}`));
-        await addSpaceItem({
+      await Promise.all(items.map((item) =>
+        spaceItemService.copyItem({
+          sourceItem: item,
           spaceId,
           uploaderId: req.user.id,
           folderId: newFolder.id,
-          filePath: path.join('spaces', String(spaceId), 'originals', `${newId}${fileExt}`),
-          thumbnailPath: path.join('spaces', String(spaceId), 'thumbnails', `${newId}${thumbExt}`),
-          contentHash: null,
-          perceptualHash: item.perceptual_hash,
-          mimeType: item.mime_type,
-          sizeBytes: item.size_bytes,
           displayName: item.display_name,
-          capturedAt: null,
-        });
-        totalItems++;
-      }));
+        }),
+      ));
+      totalItems += items.length;
 
       const subfolders = await getSubfolders({ spaceId, parentId: srcFolderId });
       for (const sub of subfolders) {

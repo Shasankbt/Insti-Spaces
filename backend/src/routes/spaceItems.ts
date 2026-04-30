@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from 'express';
-import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { authenticate, deltaSync, isMember } from '../middleware';
@@ -22,15 +21,11 @@ import {
 import { parseSpaceId } from './spacesHelpers';
 import { validateContentHashes } from '../validation';
 import { canWrite, uniqueDisplayName, toItemResponse } from './spaceUtils';
-import {
-  isVideoMime,
-  isMediaMime,
-  detectMimeFromMagicBytes,
-  commitStoredMediaFile,
-} from '../utils/media';
+import { isVideoMime, isMediaMime, detectMimeFromMagicBytes } from '../utils/media';
+import { storage } from '../storage';
+import { spaceItemService } from '../services';
 
 const router = Router({ mergeParams: true });
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
 const cleanupUploadedFiles = async (files: Express.Multer.File[]): Promise<void> => {
   await Promise.all(
@@ -92,7 +87,7 @@ const commitUploadedMediaFile = async ({
   contentHash: string | null;
   uploaderId: number;
 }) =>
-  commitStoredMediaFile({
+  spaceItemService.commitFile({
     inputPath: file.path,
     storageFilename: file.filename,
     spaceId,
@@ -332,9 +327,10 @@ router.get('/items/:itemId/file', (req, res, next) => {
       res.status(404).json({ error: 'Item not found' });
       return;
     }
-    const uploadsRoot = path.resolve(UPLOADS_ROOT);
-    const absolutePath = path.resolve(uploadsRoot, item.file_path);
-    if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
+    let absolutePath: string;
+    try {
+      absolutePath = storage.resolveAbsolute(item.file_path);
+    } catch {
       res.status(400).json({ error: 'Invalid file path' });
       return;
     }
@@ -369,9 +365,10 @@ router.get('/items/:itemId/thumbnail', (req, res, next) => {
       res.status(404).json({ error: 'Item not found' });
       return;
     }
-    const uploadsRoot = path.resolve(UPLOADS_ROOT);
-    const absolutePath = path.resolve(uploadsRoot, item.thumbnail_path);
-    if (!absolutePath.startsWith(`${uploadsRoot}${path.sep}`)) {
+    let absolutePath: string;
+    try {
+      absolutePath = storage.resolveAbsolute(item.thumbnail_path);
+    } catch {
       res.status(400).json({ error: 'Invalid file path' });
       return;
     }

@@ -1,8 +1,6 @@
-import path from 'path';
-import fs from 'fs/promises';
 import { Router } from 'express';
 import { authenticate, isMember } from '../middleware';
-import { canWrite, canManageTrash, uniqueDisplayName } from './spaceUtils';
+import { canWrite, uniqueDisplayName } from './spaceUtils';
 import {
   bulkMoveSpaceItemsToTrash,
   bulkMoveSpaceItems,
@@ -11,14 +9,13 @@ import {
   getItemsByIds,
   softDeleteSpaceItem,
   moveAndRenameSpaceItem,
-  addSpaceItem,
   getDisplayNamesInFolder,
 } from '../db/spaceItems';
 import { getFolderById } from '../db/spaceFolders';
 import { parseSpaceId } from './spacesHelpers';
+import { spaceItemService } from '../services';
 
 const router = Router({ mergeParams: true });
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 
 type Resolution = 'skip' | 'replace' | 'keep_both';
 
@@ -263,46 +260,18 @@ router.post('/item-action/copy', authenticate, isMember, async (req, res) => {
 
     await Promise.all(plan.toSoftDelete.map((id) => softDeleteSpaceItem({ spaceId, itemId: id })));
 
-    const uploadsRoot = path.resolve(UPLOADS_ROOT);
-    const originalsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'originals');
-    const thumbsDir = path.join(uploadsRoot, 'spaces', String(spaceId), 'thumbnails');
-    await fs.mkdir(originalsDir, { recursive: true });
-    await fs.mkdir(thumbsDir, { recursive: true });
-
     const sourceMap = new Map(sourceItems.map((i) => [i.photo_id, i]));
 
     await Promise.all(
       plan.toProcess.map(async ({ itemId, resolvedName }) => {
         const src = sourceMap.get(itemId);
         if (!src) return;
-
-        const srcFile = path.resolve(uploadsRoot, src.file_path);
-        const srcThumb = path.resolve(uploadsRoot, src.thumbnail_path);
-
-        const fileExt = path.extname(src.file_path);
-        const thumbExt = path.extname(src.thumbnail_path);
-        const newId = crypto.randomUUID();
-        const newFileName = `${newId}${fileExt}`;
-        const newThumbName = `${newId}${thumbExt}`;
-
-        const newFilePath = path.join('spaces', String(spaceId), 'originals', newFileName);
-        const newThumbPath = path.join('spaces', String(spaceId), 'thumbnails', newThumbName);
-
-        await fs.copyFile(srcFile, path.join(originalsDir, newFileName));
-        await fs.copyFile(srcThumb, path.join(thumbsDir, newThumbName));
-
-        await addSpaceItem({
+        await spaceItemService.copyItem({
+          sourceItem: src,
           spaceId,
           uploaderId: req.user.id,
           folderId,
-          filePath: newFilePath,
-          thumbnailPath: newThumbPath,
-          contentHash: null,
-          perceptualHash: src.perceptual_hash,
-          mimeType: src.mime_type,
-          sizeBytes: src.size_bytes,
           displayName: resolvedName,
-          capturedAt: null,
         });
       }),
     );

@@ -11,24 +11,18 @@ import {
   createVideoSession,
   getVideoSession,
   updateVideoSessionChunk,
-  deleteVideoSession,
 } from '../db/videoSessions';
-import { commitStoredMediaFile } from '../utils/media';
+import { storage } from '../storage';
+import { spaceItemService } from '../services';
 
 const router = Router({ mergeParams: true });
-const UPLOADS_ROOT = process.env.UPLOADS_ROOT ?? './uploads';
 export const VIDEO_CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
 
 // Tracks sessions where a simulated failure has already fired (testing only).
 const simulatedSessionIds = new Set<string>();
 
 const getVideoSessionTempDir = (spaceId: number, sessionId: string): string =>
-  path.resolve(UPLOADS_ROOT, 'spaces', String(spaceId), 'video-sessions', sessionId);
-
-const getVideoStorageFilename = (sessionId: string, originalName: string): string => {
-  const ext = path.extname(originalName).toLowerCase() || '.mp4';
-  return `${sessionId}${ext}`;
-};
+  path.join(storage.root, 'spaces', String(spaceId), 'video-sessions', sessionId);
 
 const getVideoChunkPath = (session: VideoUploadSession, chunkIndex: number): string =>
   path.join(session.tempDir, `chunk-${String(chunkIndex).padStart(6, '0')}.part`);
@@ -76,39 +70,6 @@ const initVideoUploadSession = async ({
     totalChunks,
     tempDir,
   });
-};
-
-const finalizeVideoUploadSession = async (session: VideoUploadSession) => {
-  const storageFilename = getVideoStorageFilename(session.sessionId, session.originalName);
-  const finalChunkPath = path.join(session.tempDir, 'assembled.tmp');
-  const chunkPaths: string[] = [];
-
-  for (let i = 0; i < session.totalChunks; i++) {
-    const chunkPath = getVideoChunkPath(session, i);
-    chunkPaths.push(chunkPath);
-    await fs.appendFile(finalChunkPath, await fs.readFile(chunkPath));
-  }
-
-  for (const chunkPath of chunkPaths) {
-    try { await fs.unlink(chunkPath); } catch { /* best-effort */ }
-  }
-
-  const item = await commitStoredMediaFile({
-    inputPath: finalChunkPath,
-    storageFilename,
-    spaceId: session.spaceId,
-    folderId: session.folderId,
-    displayName: session.displayName,
-    contentHash: session.contentHash,
-    uploaderId: session.uploaderId,
-    sizeBytes: session.sizeBytes,
-    mimeType: session.mimeType,
-  });
-
-  await deleteVideoSession(session.sessionId);
-  try { await fs.rm(session.tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
-
-  return item;
 };
 
 // POST /spaces/:spaceId/video-sessions
@@ -255,7 +216,7 @@ router.post('/video-sessions/:sessionId/complete', authenticate, isMember, expre
   }
 
   try {
-    const item = await finalizeVideoUploadSession(session);
+    const item = await spaceItemService.finalizeVideoSession(session);
     res.status(201).json({ item });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error';
